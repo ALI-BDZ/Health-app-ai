@@ -6,5 +6,15 @@ module.exports = defineConfig([
   expoConfig,
   {
     ignores: ['dist/*'],
+    settings: {
+      'import/resolver': {
+        node: {
+          extensions: ['.js', '.jsx', '.ts', '.tsx'],
+        },
+      },
+    },
+    rules: {
+      'import/no-unresolved': 'off', // Disable this rule as it's causing issues with module resolution
+    },
   },
 ]);

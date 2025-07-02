@@ -3,24 +3,49 @@ import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
+import { useEffect } from 'react';
+import { Text as RNText } from 'react-native';
 
 import { useColorScheme } from '@/hooks/useColorScheme';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+
   const [loaded] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
+    SpaceMono: require('../assets/fonts/Janna LT Bold.ttf'), // 👈 your font file
   });
 
-  if (!loaded) {
-    // Async font loading only occurs in development.
-    return null;
-  }
+  useEffect(() => {
+    if (loaded) {
+      // Monkey patch RN's Text to apply default font family globally
+      const defaultFont = 'Janna LT Bold';
+
+      const oldRender = (RNText as any).render;
+      if (!(RNText as any).__hasBeenPatched) {
+        (RNText as any).render = function (...args: unknown[]) {
+          const origin = oldRender.call(this, ...args);
+          return {
+            ...origin,
+            props: {
+              ...origin.props,
+              style: [{ fontFamily: defaultFont }, origin.props.style],
+            },
+          };
+        };
+        (RNText as any).__hasBeenPatched = true; // avoid double patching
+      }
+    }
+  }, [loaded]);
+
+  if (!loaded) return null;
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="index" options={{ headerShown: false }} />
+        <Stack.Screen name="info-form" options={{ headerShown: false }} />
+        <Stack.Screen name="home" options={{ headerShown: false }} />
+        <Stack.Screen name="profile" options={{ headerShown: false }} />
         <Stack.Screen name="+not-found" />
       </Stack>
       <StatusBar style="auto" />
