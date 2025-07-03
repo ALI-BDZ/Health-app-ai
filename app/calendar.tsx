@@ -4,8 +4,8 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
-import { DatabaseService, LogService, Medicine, DailyLog } from './databaseService';
-import { globalStyles } from './globalstyle';
+import { DatabaseService, LogService, Medicine, DailyLog } from '../services/databaseService';
+import { globalStyles } from '../services/globalstyle';
 import { Colors } from '../constants/Colors';
 import BottomBar from './BottomBar';
 
@@ -161,7 +161,13 @@ export default function CalendarScreen() {
     let totalTakenTimes = 0;
 
     medicines.forEach(med => {
-      if (med.exactTimes && med.exactTimes.length > 0) {
+      // Only consider medicines that were added on or before this date
+      const medCreatedAt = new Date(med.createdAt);
+      if (
+        med.exactTimes &&
+        med.exactTimes.length > 0 &&
+        medCreatedAt <= normalizedCheckDate // Only count if medicine existed on this day
+      ) {
         totalScheduledTimes += med.exactTimes.length;
         const medTakenTimes = dailyLogForDate?.taken?.[med.id]?.takenTimes || {};
         med.exactTimes.forEach(time => {
@@ -224,6 +230,10 @@ export default function CalendarScreen() {
     setDisplayDate(today);
     setSelectedDayInfo(today);
   };
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   return (
     <View style={styles.container}>
@@ -318,7 +328,7 @@ export default function CalendarScreen() {
                   } else if (isToday) {
                     backgroundColor = Colors.primaryLight;
                     textColor = Colors.white;
-                  }
+                  } 
 
                   return (
                     <TouchableOpacity

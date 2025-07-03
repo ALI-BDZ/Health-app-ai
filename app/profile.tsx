@@ -14,10 +14,10 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import BottomBar from './BottomBar';
-import { DatabaseService, Patient, ResponsiblePerson } from './databaseService';
+import { DatabaseService, Patient, ResponsiblePerson } from '../services/databaseService';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
-import { globalStyles } from './globalstyle';
+import { globalStyles } from '../services/globalstyle';
 
 Dimensions.get('window');
 

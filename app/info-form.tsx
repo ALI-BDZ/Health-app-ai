@@ -18,8 +18,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage'; // Add this line
 // Remove unused Button import
-import { DatabaseService, Patient } from './databaseService';
-import { globalStyles } from './globalstyle'; // Import globalStyles
+import { DatabaseService, Patient } from '../services/databaseService';
+import { globalStyles } from '../services/globalstyle'; // Import globalStyles
 
 type RegistrationType = 'patient' | 'responsible';
 

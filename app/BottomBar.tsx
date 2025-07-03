@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Colors } from '../constants/Colors'; // Your color constants
-import { globalStyles } from './globalstyle'; // Your global styles
+import { globalStyles } from '../services/globalstyle'; // Your global styles
 // 🚨 Import SafeAreaView from 'react-native-safe-area-context'
 import { SafeAreaView } from 'react-native-safe-area-context';
 

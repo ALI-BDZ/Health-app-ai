@@ -14,13 +14,14 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
-import { DatabaseService, Medicine, LogService } from './databaseService';
+import { DatabaseService, Medicine, LogService } from '../services/databaseService';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '../constants/Colors';
 import BottomBar from './BottomBar';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Notifications from 'expo-notifications';
+import { useFocusEffect } from '@react-navigation/native';
 
 const RFValue = (size: number) => {
   const scale = Dimensions.get('window').width / 375;
@@ -186,6 +187,11 @@ export default function HomeScreen() {
       console.error('Failed to save daily log:', error);
     }
   }, [medicines]);
+
+  const loadData = useCallback(async () => {
+    const storedMedicines = await DatabaseService.getMedicines();
+    setMedicines(storedMedicines);
+  }, []);
 
   useEffect(() => {
     const timeInterval = setInterval(() => setCurrentDate(new Date()), 60000);
@@ -934,6 +940,14 @@ export default function HomeScreen() {
       ...globalStyles.textBold,
     },
   });
+
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+      // setSelectedDayInfo(normalizeDateToDayStart(new Date())); // Uncomment if you have this function/variable
+      return () => {};
+    }, [loadData])
+  );
 
   return (
     <View style={responsiveStyles.container}>
