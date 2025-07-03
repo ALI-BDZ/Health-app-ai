@@ -5,8 +5,9 @@ import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import { useEffect } from 'react';
 import { Text as RNText } from 'react-native';
-
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { DailyLogProvider } from '../services/DailyLogContext';
+import { useDailyLog } from '../services/DailyLogContext';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -14,6 +15,8 @@ export default function RootLayout() {
   const [loaded] = useFonts({
     SpaceMono: require('../assets/fonts/Janna LT Bold.ttf'), // 👈 your font file
   });
+
+  const { dailyLogs, updateDailyLog, refreshDailyLogs } = useDailyLog();
 
   useEffect(() => {
     if (loaded) {
@@ -40,15 +43,17 @@ export default function RootLayout() {
   if (!loaded) return null;
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="info-form" options={{ headerShown: false }} />
-        <Stack.Screen name="home" options={{ headerShown: false }} />
-        <Stack.Screen name="profile" options={{ headerShown: false }} />
-        <Stack.Screen name="+not-found" />
-      </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+    <DailyLogProvider>
+      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+        <Stack>
+          <Stack.Screen name="index" options={{ headerShown: false }} />
+          <Stack.Screen name="info-form" options={{ headerShown: false }} />
+          <Stack.Screen name="home" options={{ headerShown: false }} />
+          <Stack.Screen name="profile" options={{ headerShown: false }} />
+          <Stack.Screen name="+not-found" />
+        </Stack>
+        <StatusBar style="auto" />
+      </ThemeProvider>
+    </DailyLogProvider>
   );
 }

@@ -116,7 +116,7 @@ export const DatabaseService = {
     medicine: Omit<Medicine, 'id' | 'createdAt' | 'updatedAt' | 'takenTimes' | 'lastTakenDate'>
   ): Promise<Medicine> {
     const medicines = await this.getMedicines();
-    const today = new Date().toDateString(); // Get today's date string for initial lastTakenDate
+    const today = new Date().toISOString().split('T')[0]; // Get today's date string for initial lastTakenDate
 
     const newMedicine: Medicine = {
       id: medicines.length > 0 ? Math.max(...medicines.map(m => m.id)) + 1 : 1, // Ensure unique ID

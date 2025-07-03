@@ -22,6 +22,7 @@ import BottomBar from './BottomBar';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Notifications from 'expo-notifications';
 import { useFocusEffect } from '@react-navigation/native';
+import { useDailyLog } from '../services/DailyLogContext';
 
 const RFValue = (size: number) => {
   const scale = Dimensions.get('window').width / 375;
@@ -67,6 +68,7 @@ export default function HomeScreen() {
   const [exactTimes, setExactTimes] = useState<string[]>([]);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [pickerTime, setPickerTime] = useState(new Date());
+  const { dailyLogs, updateDailyLog, refreshDailyLogs } = useDailyLog();
 
   useEffect(() => {
     const onChange = () => {
@@ -167,7 +169,7 @@ export default function HomeScreen() {
 
   const saveDailyLog = useCallback(async () => {
     try {
-      const today = new Date().toDateString();
+      const today = new Date().toISOString().split('T')[0];
       const taken = medicines.reduce((acc, medicine) => {
         if (Object.keys(medicine.takenTimes || {}).length > 0 &&
             Object.values(medicine.takenTimes || {}).some(status => status)) {
@@ -198,10 +200,10 @@ export default function HomeScreen() {
 
     const loadAndResetMedicines = async () => {
       let storedMedicines = await DatabaseService.getMedicines();
-      const today = new Date().toDateString();
+      const today = new Date().toISOString().split('T')[0];
       const medicinesToUpdateInDB = [];
       const updatedMedicines = storedMedicines.map(med => {
-        if (!med.lastTakenDate || new Date(med.lastTakenDate).toDateString() !== today) {
+        if (!med.lastTakenDate || new Date(med.lastTakenDate).toISOString().split('T')[0] !== today) {
           const resetMed = { ...med, takenTimes: {}, lastTakenDate: today };
           medicinesToUpdateInDB.push(resetMed);
           return resetMed;
@@ -396,6 +398,7 @@ export default function HomeScreen() {
       }
       closeModal();
       await scheduleAllMedicinesNotifications();
+      await initializeDailyLogForToday();
     } catch (error) {
       Alert.alert('خطأ', `فشل في ${editingMedicine ? 'تحديث' : 'حفظ'} الدواء.`);
     }
@@ -438,31 +441,52 @@ export default function HomeScreen() {
         {
           text: action,
           onPress: async () => {
-            const updatedTakenTimes = {
-              ...medicine.takenTimes,
-              [time]: !isTaken,
-            };
-            const today = new Date().toDateString();
+            // Always build a full takenTimes for the day
+            const updatedTakenTimes: { [key: string]: boolean } = {};
+            medicine.exactTimes.forEach(t => {
+              // If this is the time being toggled, flip it; otherwise, keep previous or default to false
+              if (t === time) {
+                updatedTakenTimes[t] = !isTaken;
+              } else {
+                updatedTakenTimes[t] = medicine.takenTimes?.[t] === true;
+              }
+            });
+            const today = new Date().toISOString().split('T')[0];
+            let newQuantity = medicine.quantity;
+            if (!isTaken && medicine.quantity > 0) {
+              newQuantity = medicine.quantity - 1;
+            }
             try {
               await DatabaseService.updateMedicine(medicineId, {
                 takenTimes: updatedTakenTimes,
-                lastTakenDate: today
+                lastTakenDate: today,
+                quantity: newQuantity,
               });
               setMedicines(medicines.map(m =>
                 m.id === medicineId ? {
                   ...m,
                   takenTimes: updatedTakenTimes,
-                  lastTakenDate: today
+                  lastTakenDate: today,
+                  quantity: newQuantity,
                 } : m
               ));
+              // Use context to update the daily log
               const todayISO = new Date().toISOString().split('T')[0];
-              const currentDailyLog = await LogService.getDailyLog(todayISO) || { date: todayISO, taken: {} };
+              const currentDailyLog = dailyLogs[todayISO] || { date: todayISO, taken: {} };
+              // Build a full takenTimes for the log as well
               const medLog = currentDailyLog.taken[medicineId] || { name: medicine.name, takenTimes: {} };
-              medLog.takenTimes[time] = !isTaken;
+              medicine.exactTimes.forEach(t => {
+                if (t === time) {
+                  medLog.takenTimes[t] = !isTaken;
+                } else {
+                  medLog.takenTimes[t] = medicine.takenTimes?.[t] === true;
+                }
+              });
               currentDailyLog.taken[medicineId] = medLog;
-              await LogService.saveDailyLog(todayISO, currentDailyLog);
+              await updateDailyLog(todayISO, currentDailyLog);
+              await refreshDailyLogs();
               const statusMessage = !isTaken
-                ? `تم تسجيل تناول دواء "${medicine.name}" بنجاح! 💊✅`
+                ? `تم تسجيل تناول دواء "${medicine.name}" بنجاح! 💊✅ (الكمية المتبقية: ${newQuantity})`
                 : `تم إلغاء تسجيل تناول دواء "${medicine.name}".`;
               Alert.alert('تم', statusMessage);
               await scheduleAllMedicinesNotifications();
@@ -948,6 +972,73 @@ export default function HomeScreen() {
       return () => {};
     }, [loadData])
   );
+
+  // New function to save today's state to the historical log (can be called at midnight or with a button)
+  const saveTodayToHistory = useCallback(async () => {
+    try {
+      const todayISO = new Date().toISOString().split('T')[0];
+      const taken = medicines.reduce((acc, medicine) => {
+        if (Object.keys(medicine.takenTimes || {}).length > 0 &&
+            Object.values(medicine.takenTimes || {}).some(status => status)) {
+          (acc as Record<number, any>)[medicine.id] = {
+            name: medicine.name,
+            takenTimes: medicine.takenTimes || {}
+          };
+        }
+        return acc;
+      }, {});
+      const dailyLog = {
+        date: todayISO,
+        taken
+      };
+      await LogService.saveDailyLog(todayISO, dailyLog);
+      Alert.alert('تم', 'تم حفظ حالة اليوم في السجل التاريخي.');
+    } catch (error) {
+      Alert.alert('خطأ', 'فشل في حفظ حالة اليوم في السجل التاريخي.');
+    }
+  }, [medicines]);
+
+  // Initialize today's log: for each medicine, for each time, ensure takenTimes[time] is set to false if not present
+  const initializeDailyLogForToday = useCallback(async () => {
+    const today = new Date().toISOString().split('T')[0];
+    const storedMedicines = await DatabaseService.getMedicines();
+    let changed = false;
+    const updatedMedicines = storedMedicines.map(med => {
+      const updatedTakenTimes: { [key: string]: boolean } = { ...med.takenTimes };
+      med.exactTimes.forEach(time => {
+        if (updatedTakenTimes[time] !== true) {
+          updatedTakenTimes[time] = false;
+        }
+      });
+      if (JSON.stringify(updatedTakenTimes) !== JSON.stringify(med.takenTimes)) {
+        changed = true;
+        return { ...med, takenTimes: updatedTakenTimes };
+      }
+      return med;
+    });
+    if (changed) {
+      for (const med of updatedMedicines) {
+        await DatabaseService.updateMedicine(med.id, { takenTimes: med.takenTimes });
+      }
+      setMedicines(updatedMedicines);
+    }
+    // Build and save a complete daily log for today
+    const taken: Record<number, any> = {};
+    updatedMedicines.forEach(med => {
+      taken[med.id] = {
+        name: med.name,
+        takenTimes: { ...med.takenTimes }
+      };
+    });
+    const dailyLog = { date: today, taken };
+    await LogService.saveDailyLog(today, dailyLog);
+    await refreshDailyLogs();
+  }, [refreshDailyLogs]);
+
+  // Call this on app load
+  useEffect(() => {
+    initializeDailyLogForToday();
+  }, [initializeDailyLogForToday]);
 
   return (
     <View style={responsiveStyles.container}>
