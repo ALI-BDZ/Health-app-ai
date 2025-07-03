@@ -34,6 +34,7 @@ export const Colors = {
   lightGrey: '#e0e7ff', // Added: For inactive/disabled chips or general light elements
   
   // Text
+  text: '#1e293b', // Added: Main text color
   textPrimary: '#1e293b',
   textSecondary: '#475569',
   textTertiary: '#94a3b8',
@@ -42,6 +43,7 @@ export const Colors = {
   // Utility
   white: '#ffffff',
   black: '#000000',
+  border: '#e2e8f0', // Added: Border color
   borderLight: 'rgba(0, 0, 0, 0.05)',
   
   // Icon colors
@@ -62,12 +64,14 @@ export type ColorScheme = {
   background: string;
   cardBackground: string;
   lightGrey: string;    // Added
+  text: string;         // Added: Main text color
   textPrimary: string;
   textSecondary: string;
   textTertiary: string;
   textMuted: string;
   white: string;
   black: string;
+  border: string;       // Added: Border color
   borderLight: string;
   iconActive: string;
   iconInactive: string;
