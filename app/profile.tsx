@@ -19,7 +19,6 @@ import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { globalStyles } from '../services/globalstyle';
 
-Dimensions.get('window');
 
 export default function ProfileScreen() {
   const [patient, setPatient] = useState<Patient | null>(null);
@@ -41,6 +40,8 @@ export default function ProfileScreen() {
 
   const loadData = async () => {
     setLoading(true);
+
+
     try {
       const currentUserId = await AsyncStorage.getItem('currentUserId');
       if (!currentUserId) {
@@ -428,7 +429,8 @@ const styles = StyleSheet.create({
     marginHorizontal: 10,
   },
   deleteBtn: {
-    marginTop: 20,
+    marginTop: 30,
+    top:-30,
     borderRadius: 25,
     shadowColor: '#ff6b6b',
     shadowOffset: { width: 0, height: 4 },

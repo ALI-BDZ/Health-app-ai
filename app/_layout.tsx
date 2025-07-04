@@ -6,8 +6,8 @@ import 'react-native-reanimated';
 import { useEffect } from 'react';
 import { Text as RNText } from 'react-native';
 import { useColorScheme } from '@/hooks/useColorScheme';
-import { DailyLogProvider } from '../services/DailyLogContext';
-import { useDailyLog } from '../services/DailyLogContext';
+import { DailyLogProvider , useDailyLog } from '../services/DailyLogContext';
+
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -16,7 +16,7 @@ export default function RootLayout() {
     SpaceMono: require('../assets/fonts/Janna LT Bold.ttf'), // 👈 your font file
   });
 
-  const { dailyLogs, updateDailyLog, refreshDailyLogs } = useDailyLog();
+  useDailyLog();
 
   useEffect(() => {
     if (loaded) {
@@ -50,6 +50,8 @@ export default function RootLayout() {
           <Stack.Screen name="info-form" options={{ headerShown: false }} />
           <Stack.Screen name="home" options={{ headerShown: false }} />
           <Stack.Screen name="profile" options={{ headerShown: false }} />
+          <Stack.Screen name="calendar" options={{ headerShown: false }} />
+
           <Stack.Screen name="+not-found" />
         </Stack>
         <StatusBar style="auto" />

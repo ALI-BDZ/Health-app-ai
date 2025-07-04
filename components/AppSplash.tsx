@@ -1,8 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, Image, Animated, Easing } from 'react-native';
 import { useFonts } from 'expo-font';
+import * as SplashScreen from 'expo-splash-screen';
 import { router } from 'expo-router';
+
 // Keep the splash screen visible while we fetch resources
+SplashScreen.preventAutoHideAsync();
+
 export default function AppSplashScreen() {
   const [fadeAnim] = useState(new Animated.Value(0));
   const [logoFloatAnim] = useState(new Animated.Value(0));
@@ -15,23 +19,29 @@ export default function AppSplashScreen() {
     new Animated.Value(0), // Second icon
     new Animated.Value(0), // Third icon
   ]);
+
   // Load the custom font
   const [fontsLoaded] = useFonts({
     'JannaLT-Regular': require('../assets/fonts/Janna LT Bold.ttf'),
     'JannaLTBold': require('../assets/fonts/Janna LT Bold.ttf'),
     'SpaceMono-Regular': require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
+
   useEffect(() => {
     if (!fontsLoaded) {
       return;
     }
+
     // Hide the splash screen once fonts are loaded
+    SplashScreen.hideAsync();
+
     // Start the main logo fade in immediately
     Animated.timing(fadeAnim, {
       toValue: 1,
       duration: 1000,
       useNativeDriver: true,
     }).start();
+
     // Start logo floating animation
     Animated.loop(
       Animated.sequence([
@@ -49,6 +59,7 @@ export default function AppSplashScreen() {
         }),
       ])
     ).start();
+
     // Staggered text animations - title appears after logo
     setTimeout(() => {
       Animated.timing(titleFadeAnim, {
@@ -57,6 +68,7 @@ export default function AppSplashScreen() {
         useNativeDriver: true,
       }).start();
     }, 600);
+
     // Tagline appears after title
     setTimeout(() => {
       Animated.timing(taglineFadeAnim, {
@@ -65,6 +77,7 @@ export default function AppSplashScreen() {
         useNativeDriver: true,
       }).start();
     }, 1200);
+
     // Start random floating animations for icons with different delays and speeds
     iconAnims.forEach((anim, index) => {
       const randomDelay = Math.random() * 2000 + 500; // Random delay between 500-2500ms
@@ -93,18 +106,23 @@ export default function AppSplashScreen() {
         createRandomAnimation();
       }, randomDelay);
     });
+
     const timer = setTimeout(() => {
       router.replace('/info-form');
     }, 4000); // Increased timeout to see all animations
+
     return () => clearTimeout(timer);
   }, [fadeAnim, fontsLoaded, iconAnims, logoFloatAnim, taglineFadeAnim, titleFadeAnim]);
+
   if (!fontsLoaded) {
     return null; // Return null instead of AppLoading
   }
+
   const logoFloatInterpolation = logoFloatAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [-8, 8],
   });
+
   // Create different interpolations for each icon with varying ranges
   const iconInterpolations = iconAnims.map((anim, index) => {
     const range = 15 + (index * 5); // Different floating ranges: 15, 20, 25
@@ -113,6 +131,7 @@ export default function AppSplashScreen() {
       outputRange: [-range, range],
     });
   });
+
   const floatingIcons = [
     {
       source: require('../assets/images/clock.png'),
@@ -136,6 +155,7 @@ export default function AppSplashScreen() {
       height: 38,
     },
   ];
+
   return (
     <View style={styles.container}>
       <View style={styles.backgroundCircles}>
@@ -143,6 +163,7 @@ export default function AppSplashScreen() {
         <View style={[styles.circle, styles.circle2]} />
         <View style={[styles.circle, styles.circle3]} />
       </View>
+
       {floatingIcons.map((item, index) => (
         <Animated.View
           key={index}
@@ -168,6 +189,7 @@ export default function AppSplashScreen() {
           />
         </Animated.View>
       ))}
+
       <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
         <Animated.Image
           source={require('../assets/images/logo.png')}
@@ -194,6 +216,7 @@ export default function AppSplashScreen() {
     </View>
   );
 }
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,

@@ -106,6 +106,29 @@ export default function HomeScreen() {
       });
     }
   }, []);
+  const formatArabicDate = (date: Date) => {
+    const daysOfWeek = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+    const months = [
+      'جانفي', 'فيفري', 'مارس', 'أفريل', 'ماي', 'جوان',
+      'جويلية', 'أوت', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'
+    ];
+  
+    const dayName = daysOfWeek[date.getDay()];
+    const day = date.getDate();
+    const monthName = months[date.getMonth()];
+    const year = date.getFullYear();
+  
+    // Format time with صباح/مساء
+    let hours = date.getHours();
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    const period = hours < 12 ? 'صباح' : 'مساء';
+    hours = hours % 12 || 12; // Convert to 12-hour format
+  
+    return {
+      dateString: `${dayName} ${day} ${monthName} ${year}`,
+      timeString: `${hours}:${minutes} ${period}`
+    };
+  };
 
   const scheduleMedicineNotifications = useCallback(async (medicine: Medicine) => {
     const status = await requestNotificationPermissions();
@@ -114,52 +137,69 @@ export default function HomeScreen() {
       return;
     }
     await setupNotificationChannel();
-
+  
+    // Cancel existing notifications for this medicine
     const existingNotifications = await Notifications.getAllScheduledNotificationsAsync();
     for (const notification of existingNotifications) {
       if (notification.identifier.startsWith(`medicine-${medicine.id}-`)) {
         await Notifications.cancelScheduledNotificationAsync(notification.identifier);
       }
     }
-
+  
     for (const time of medicine.exactTimes) {
       const [hour, minute] = time.split(':').map(Number);
-      const identifier = `medicine-${medicine.id}-${time.replace(':', '-')}`;
-
+  
+      // Validate time format
+      if (isNaN(hour) || isNaN(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+        console.error(`Invalid time format for ${time}`);
+        continue;
+      }
+  
       try {
-        // Calculate seconds until next occurrence of this time
         const now = new Date();
         const scheduledTime = new Date();
         scheduledTime.setHours(hour, minute, 0, 0);
-        
+  
         // If the time has already passed today, schedule for tomorrow
         if (scheduledTime <= now) {
           scheduledTime.setDate(scheduledTime.getDate() + 1);
         }
-        
-        const secondsUntilTrigger = Math.floor((scheduledTime.getTime() - now.getTime()) / 1000);
-
-        await Notifications.scheduleNotificationAsync({
-          identifier,
-          content: {
-            title: `💊 حان وقت دواء: ${medicine.name}`,
-            body: `تذكّر أن تأخذ جرعتك الآن. الكمية المتبقية: ${medicine.quantity}.`,
-            data: { medicineId: medicine.id, time },
-            sound: 'default',
-          },
-          trigger: {
-            type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-            channelId: 'medicine-reminders',
-            seconds: secondsUntilTrigger,
-            repeats: true,
-          },
-        });
+  
+        // Schedule four notifications: at 0s, 30s, 60s, 90s
+        for (let i = 0; i < 4; i++) {
+          const offsetSeconds = i * 30; // 0, 30, 60, 90 seconds
+          const notificationTime = new Date(scheduledTime.getTime() + offsetSeconds * 1000);
+          const secondsUntilTrigger = Math.floor((notificationTime.getTime() - now.getTime()) / 1000);
+  
+          // Skip if secondsUntilTrigger is negative
+          if (secondsUntilTrigger < 0) {
+            console.warn(`Skipping negative trigger time for ${time}, offset ${offsetSeconds}s`);
+            continue;
+          }
+  
+          const identifier = `medicine-${medicine.id}-${time.replace(':', '-')}-${i}`;
+  
+          await Notifications.scheduleNotificationAsync({
+            identifier,
+            content: {
+              title: `💊 حان وقت دواء: ${medicine.name}`,
+              body: `تذكّر أن تأخذ جرعتك الآن. الكمية ${medicine.quantity}.`,
+              data: { medicineId: medicine.id, time, sequence: i + 1 },
+              sound: 'default',
+            },
+            trigger: {
+              type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+              channelId: 'medicine-reminders',
+              seconds: secondsUntilTrigger,
+              repeats: false,
+            },
+          });
+        }
       } catch (error) {
-        console.error(`Failed to schedule notification:`, error);
+        console.error(`Failed to schedule notification for ${time}:`, error);
       }
     }
   }, [requestNotificationPermissions, setupNotificationChannel]);
-
   const scheduleAllMedicinesNotifications = useCallback(async () => {
     const currentMedicines = await DatabaseService.getMedicines();
     for (const med of currentMedicines) {
@@ -201,7 +241,7 @@ export default function HomeScreen() {
     const loadAndResetMedicines = async () => {
       let storedMedicines = await DatabaseService.getMedicines();
       const today = new Date().toISOString().split('T')[0];
-      const medicinesToUpdateInDB = [];
+      const medicinesToUpdateInDB: Medicine[] | { takenTimes: {}; lastTakenDate: string; id: number; name: string; photo?: string | null; quantity: number; periods: string[]; exactTimes: string[]; createdAt: string; updatedAt: string; }[] = [];
       const updatedMedicines = storedMedicines.map(med => {
         if (!med.lastTakenDate || new Date(med.lastTakenDate).toISOString().split('T')[0] !== today) {
           const resetMed = { ...med, takenTimes: {}, lastTakenDate: today };
@@ -322,7 +362,7 @@ export default function HomeScreen() {
               return;
             }
             const result = await ImagePicker.launchImageLibraryAsync({
-              mediaTypes: ImagePicker.MediaType.Images,
+              mediaTypes: ImagePicker.MediaTypeOptions.Images,
               allowsEditing: true,
               aspect: [4, 3],
               quality: 1
@@ -345,19 +385,36 @@ export default function HomeScreen() {
   const onTimeChange = (event: any, selectedDate?: Date) => {
     const currentDate = selectedDate || pickerTime;
     setShowTimePicker(Platform.OS === 'ios');
+  
     if (event.type === 'set' || Platform.OS === 'ios') {
       setPickerTime(currentDate);
+  
+      // Format time as HH:mm in 24-hour format for storage
       const hours = currentDate.getHours().toString().padStart(2, '0');
       const minutes = currentDate.getMinutes().toString().padStart(2, '0');
       const formattedTime = `${hours}:${minutes}`;
+  
+      // Display time in 12-hour format with صباح/مساء for UI
+      const displayHours = currentDate.getHours() % 12 || 12; // Convert to 12-hour format
+      const period = currentDate.getHours() < 12 ? 'صباح' : 'مساء';
+      const displayTime = `${displayHours}:${minutes} ${period}`;
+  
       if (formattedTime && !exactTimes.includes(formattedTime)) {
         setExactTimes((prevTimes) => {
           const newTimes = [...prevTimes, formattedTime];
-          return newTimes.sort();
+          // Sort times chronologically by converting to minutes since midnight
+          return newTimes.sort((a, b) => {
+            const [aH, aM] = a.split(':').map(Number);
+            const [bH, bM] = b.split(':').map(Number);
+            return (aH * 60 + aM) - (bH * 60 + bM);
+          });
         });
+  
+        // Optional: Show a temporary message with the added time
       }
     }
   };
+  
 
   const handleSaveMedicine = async () => {
     if (!medicineName || !quantity || exactTimes.length === 0) {
@@ -453,9 +510,7 @@ export default function HomeScreen() {
             });
             const today = new Date().toISOString().split('T')[0];
             let newQuantity = medicine.quantity;
-            if (!isTaken && medicine.quantity > 0) {
-              newQuantity = medicine.quantity - 1;
-            }
+            
             try {
               await DatabaseService.updateMedicine(medicineId, {
                 takenTimes: updatedTakenTimes,
@@ -486,7 +541,7 @@ export default function HomeScreen() {
               await updateDailyLog(todayISO, currentDailyLog);
               await refreshDailyLogs();
               const statusMessage = !isTaken
-                ? `تم تسجيل تناول دواء "${medicine.name}" بنجاح! 💊✅ (الكمية المتبقية: ${newQuantity})`
+                ? `تم تسجيل تناول دواء "${medicine.name}" بنجاح! 💊✅ (الكمية : ${newQuantity})`
                 : `تم إلغاء تسجيل تناول دواء "${medicine.name}".`;
               Alert.alert('تم', statusMessage);
               await scheduleAllMedicinesNotifications();
@@ -523,33 +578,45 @@ export default function HomeScreen() {
       paddingHorizontal: wp('2%'),
     },
     header: {
-      paddingTop: hp('8%'),
+      paddingTop: hp('6%'), // Reduced from 8%
       paddingHorizontal: wp('5%'),
-      paddingBottom: hp('2.5%'),
+      paddingBottom: hp('2%'), // Reduced from 2.5%
       borderBottomLeftRadius: wp('7.5%'),
       borderBottomRightRadius: wp('7.5%'),
       justifyContent: 'center',
       alignItems: 'center',
-      elevation: 5,
+      elevation: 6,
       shadowColor: Colors.primaryDark,
-      shadowOffset: { width: 0, height: hp('0.5%') },
+      shadowOffset: { 
+        width: 0, 
+        height: hp('0.5%') 
+      },
       shadowOpacity: 0.3,
-      shadowRadius: wp('1.25%'),
+      shadowRadius: wp('1.5%'),
     },
     headerContent: {
       alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: hp('0.5%'), // Reduced from 1%
     },
     dateText: {
-      fontSize: RFValue(14),
-      color: 'rgba(255,255,255,0.8)',
+      fontSize: RFValue(14), // Back to original size
+      color: 'rgba(255,255,255,0.9)',
       ...globalStyles.textDefault,
+      textAlign: 'center',
+      writingDirection: 'rtl',
     },
     timeText: {
-      fontSize: RFValue(28),
-      fontWeight: 'bold',
+      fontSize: RFValue(28), // Back to original size
       color: Colors.white,
       marginTop: hp('0.6%'),
       ...globalStyles.textBold,
+      textAlign: 'center',
+      writingDirection: 'rtl',
+      // Kept subtle text shadow for readability
+      textShadowColor: 'rgba(0, 0, 0, 0.15)',
+      textShadowOffset: { width: 0.5, height: 0.5 },
+      textShadowRadius: 2,
     },
     headerIcon: {
       position: 'absolute',
@@ -616,18 +683,18 @@ export default function HomeScreen() {
       flexWrap: 'wrap',
     },
     medicineImage: {
-      width: dimensions.isPortrait ? wp('30%') : wp('20%'),
+      width: dimensions.isPortrait ? wp('35%') : wp('50%'), // Increased width while maintaining proportions
       height: hp('12%'),
       borderRadius: wp('5%'),
-      marginRight: dimensions.isPortrait ? wp('5%') : 0,
+      marginRight: dimensions.isPortrait ? wp('4%') : 0,
       borderWidth: 1,
       borderColor: Colors.primaryLight,
-      aspectRatio: 4/3,
+      aspectRatio: 4/3, // Maintained original aspect ratio
     },
     medicineImagePlaceholder: {
-      width: dimensions.isPortrait ? wp('30%') : wp('20%'),
+      width: dimensions.isPortrait ? wp('35%') : wp('25%'), // Matching medicineImage width
       aspectRatio: 4/3,
-      marginRight: dimensions.isPortrait ? wp('5%') : 0,
+      marginRight: dimensions.isPortrait ? wp('4%') : 0,
       backgroundColor: '#e0f2f7',
       justifyContent: 'center',
       alignItems: 'center',
@@ -644,18 +711,27 @@ export default function HomeScreen() {
       fontSize: RFValue(16),
       color: Colors.textPrimary,
       ...globalStyles.textBold,
-      marginBottom: hp('0.3%'),
+      marginBottom: hp('2%'), // Increased margin for better spacing
       textAlign: 'right',
+      alignSelf: 'stretch', // Takes full width
+      writingDirection: 'rtl', // Ensures RTL text direction
+      paddingHorizontal: wp('2%'), // Add some padding
     },
     quantityContainer: {
-      flexDirection: 'row',
+      flexDirection: 'row-reverse', // RTL layout
       alignItems: 'center',
+      alignSelf: 'stretch', // Takes full width
+      paddingHorizontal: wp('2%'),
+      marginBottom: hp('1%'), // Space between elements
     },
     medicineQuantity: {
       fontSize: RFValue(13),
       color: Colors.textSecondary,
-      marginLeft: wp('1.25%'),
+      marginRight: wp('2%'), // Changed from marginLeft for RTL
       ...globalStyles.textDefault,
+      writingDirection: 'rtl', // Ensures RTL text direction
+      flexShrink: 1, // Allows text to shrink if needed
+      flexWrap: 'wrap', // Allows text to wrap
     },
     periodsContainer: {
       flexDirection: 'row',
@@ -683,12 +759,14 @@ export default function HomeScreen() {
     timesContainer: {
       flexDirection: 'row-reverse',
       flexWrap: 'wrap',
-      marginBottom: hp('0.6%'),
+      marginBottom: hp('0.1%'),
       justifyContent: 'flex-start',
     },
     timeButtonContainer: {
       margin: wp('1%'),
-      width: dimensions.isPortrait ? '48%' : '31%',
+      width: 'auto',
+      flex: 1,
+      alignSelf: 'center',
     },
     timeButtonGradient: {
       borderRadius: wp('5%'),
@@ -785,7 +863,8 @@ export default function HomeScreen() {
     },
     addButton: {
       position: 'absolute',
-      bottom: hp('13%'),
+      bottom: hp('15%'),
+      right: hp('13.5%'),
       alignSelf: 'center',
       elevation: 8,
       shadowColor: Colors.primary,
@@ -808,163 +887,180 @@ export default function HomeScreen() {
       marginLeft: wp('2%'),
       ...globalStyles.textBold,
     },
-    modalContainer: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-      backgroundColor: 'rgba(0, 0, 0, 0.5)',
-      padding: wp('5%'),
-    },
-    modalContent: {
-      backgroundColor: Colors.background,
-      borderRadius: wp('5%'),
-      width: wp('90%'),
-      maxHeight: hp('70%'),
-      overflow: 'hidden',
-      elevation: 10,
-    },
-    modalHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      padding: wp('5%'),
-      borderTopLeftRadius: wp('5%'),
-      borderTopRightRadius: wp('5%'),
-      backgroundColor: Colors.primary,
-    },
-    modalTitle: {
-      fontSize: RFValue(18),
-      fontWeight: 'bold',
-      color: Colors.white,
-      ...globalStyles.textBold,
-    },
-    modalBody: {
-      padding: wp('5%'),
-      flexGrow: 1,
-      minHeight: hp('25%'),
-    },
-    label: {
-      fontSize: RFValue(14),
-      color: Colors.textPrimary,
-      marginBottom: hp('1%'),
-      marginTop: hp('1.8%'),
-      ...globalStyles.textBold,
-      textAlign: 'right',
-    },
-    input: {
-      backgroundColor: '#f8fafc',
-      borderWidth: 1,
-      borderColor: '#cbd5e1',
-      borderRadius: wp('2.5%'),
-      padding: wp('3%'),
-      fontSize: RFValue(14),
-      color: Colors.textPrimary,
-      textAlign: 'right',
-      ...globalStyles.textDefault,
-      height: hp('6%'),
-    },
-    photoButton: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: '#e0f2f7',
-      padding: wp('3%'),
-      borderRadius: wp('2.5%'),
-      marginTop: hp('1.8%'),
-      borderWidth: 1,
-      borderColor: Colors.primaryLight,
-    },
-    photoButtonText: {
-      marginLeft: wp('2.5%'),
-      fontSize: RFValue(14),
-      color: Colors.primary,
-      ...globalStyles.textDefault,
-    },
-    imagePreviewContainer: {
-      alignItems: 'center',
-      marginTop: hp('1.8%'),
-      position: 'relative',
-    },
-    imagePreview: {
-      width: wp('40%'),
-      height: wp('40%'),
-      borderRadius: wp('2%'),
-    },
-    removeImageButton: {
-      position: 'absolute',
-      top: wp('2%'),
-      right: wp('2%'),
-      backgroundColor: 'white',
-      borderRadius: wp('3.75%'),
-      padding: wp('1%'),
-    },
-    exactTimesContainer: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      marginTop: hp('0.6%'),
-    },
-    exactTimeChip: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: '#e0f2f7',
-      borderRadius: wp('5%'),
-      paddingVertical: hp('0.75%'),
-      paddingHorizontal: wp('3%'),
-      marginRight: wp('2.5%'),
-      marginBottom: hp('1%'),
-      borderWidth: 1,
-      borderColor: Colors.primaryLight,
-    },
-    exactTimeText: {
-      fontSize: RFValue(12),
-      color: Colors.primary,
-      marginRight: wp('1.25%'),
-      ...globalStyles.textDefault,
-    },
-    removeTimeButton: {
-      padding: wp('0.5%'),
-    },
-    addTimeButton: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: '#f0f4f8',
-      borderRadius: wp('5%'),
-      paddingVertical: hp('1%'),
-      paddingHorizontal: wp('3.75%'),
-      marginBottom: hp('1.2%'),
-      borderWidth: 1,
-      borderColor: '#cbd5e1',
-    },
-    addTimeButtonText: {
-      marginLeft: wp('2%'),
-      fontSize: RFValue(12),
-      color: Colors.primary,
-      ...globalStyles.textDefault,
-    },
-    saveButton: {
-      marginTop: hp('2.5%'),
-      marginBottom: hp('2%'),
-      borderRadius: wp('7.5%'),
-      overflow: 'hidden',
-      elevation: 5,
-      shadowColor: Colors.primary,
-      shadowOffset: { width: 0, height: hp('0.375%') },
-      shadowOpacity: 0.2,
-      shadowRadius: wp('1%'),
-    },
-    saveButtonGradient: {
-      flexDirection: 'row',
-      justifyContent: 'center',
-      alignItems: 'center',
-      paddingVertical: hp('1.8%'),
-    },
-    saveButtonText: {
-      color: Colors.white,
-      fontSize: RFValue(14),
-      ...globalStyles.textBold,
-    },
   });
+  // This is a completely new style object. Replace your old styles with this.
+// It's designed for the "Modern Card" UI and is RTL-first.
 
+const creativeStyles = StyleSheet.create({
+  // --- Modal Structure ---
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'flex-end', // ✨ NEW: Modal slides up from the bottom
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalContent: {
+    backgroundColor: '#f8fafc', // ✨ CHANGED: A slightly off-white base
+    borderTopLeftRadius: wp('8%'), // ✨ NEW: Only top corners are rounded
+    borderTopRightRadius: wp('8%'),
+    width: '100%',
+    maxHeight: hp('90%'), // Can take more of the screen
+    padding: wp('5%'),
+    elevation: 10,
+  },
+  modalHeader: {
+    flexDirection: 'row-reverse', // ✨ RTL: Ensures layout is right-to-left
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: hp('2%'),
+    marginBottom: hp('2%'),
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+    writingDirection: 'rtl', // Explicitly set writing direction
+  },
+  modalTitle: {
+    fontSize: RFValue(20),
+    fontWeight: 'bold',
+    color: Colors.textPrimary, // ✨ CHANGED: Dark text on a light header
+    ...globalStyles.textBold,
+  },
+  closeButton: {
+    backgroundColor: '#e2e8f0',
+    borderRadius: 50,
+    padding: wp('1%'),
+  },
+  modalBody: {
+    // ScrollView styles are applied directly to the component
+  },
+
+  // --- ✨ NEW: Input Card System ---
+  inputCard: {
+    backgroundColor: Colors.white,
+    borderRadius: wp('4%'),
+    padding: wp('4%'),
+    marginBottom: hp('2%'), // Space between cards
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    elevation: 2,
+    shadowColor: '#94a3b8',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  label: {
+    fontSize: RFValue(14),
+    color: Colors.textPrimary,
+    ...globalStyles.textBold,
+    textAlign: 'right',
+    marginBottom: hp('1.5%'), // Space between label and input
+    writingDirection: 'rtl',
+  },
+  inputWrapper: {
+    flexDirection: 'row', // Items will flow based on language direction (RTL)
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: wp('2.5%'),
+    paddingHorizontal: wp('3%'),
+  },
+  input: {
+    flex: 1,
+    paddingVertical: hp('1.5%'),
+    fontSize: RFValue(14),
+    color: Colors.textPrimary,
+    textAlign: 'right',
+    ...globalStyles.textDefault,
+    writingDirection: 'rtl',
+  },
+  inputIcon: {
+    // For RTL, this margin pushes the icon away from the text on its left
+    marginLeft: wp('3%'),
+  },
+
+  // --- ✨ NEW: Visual Photo Uploader ---
+  photoUploadContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: hp('20%'),
+    borderRadius: wp('4%'),
+    borderWidth: 2,
+    borderColor: Colors.primaryLight,
+    borderStyle: 'dashed',
+    backgroundColor: '#e0f2f7',
+    marginBottom: hp('2%'),
+    overflow: 'hidden', // Ensures the preview image respects the border radius
+  },
+  photoUploadText: {
+    fontSize: RFValue(14),
+    color: Colors.primary,
+    ...globalStyles.textBold,
+    marginTop: hp('1%'),
+  },
+  imagePreview: {
+    width: '100%',
+    height: '100%',
+    position: 'absolute',
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: wp('2%'),
+    right: wp('2%'), // RTL friendly
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 50,
+    padding: wp('1%'),
+    elevation: 5,
+  },
+
+  // --- Time Chips & Add Button ---
+  timesContainer: {
+    // This is an inputCard itself
+  },
+  exactTimesContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    writingDirection: 'rtl',
+    marginTop: hp('1%'),
+  },
+  exactTimeChip: {
+    flexDirection: 'row-reverse', // Icon on the left side of text
+    alignItems: 'center',
+    backgroundColor: Colors.white,
+    borderRadius: wp('5%'),
+    paddingVertical: hp('1%'),
+    paddingHorizontal: wp('3%'),
+    margin: wp('1%'),
+    borderWidth: 1,
+    borderColor: Colors.primary,
+  },
+  exactTimeText: {
+    fontSize: RFValue(13),
+    color: Colors.primary,
+    ...globalStyles.textDefault,
+    marginRight: wp('2%'),
+  },
+
+  // --- ✨ NEW: Prominent Save Button ---
+  saveButton: {
+    marginTop: hp('2%'),
+    borderRadius: wp('4%'),
+    overflow: 'hidden',
+    elevation: 5,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+  },
+  saveButtonGradient: {
+    flexDirection: 'row-reverse', // Icon on the right
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: hp('2%'),
+  },
+  saveButtonText: {
+    color: Colors.white,
+    fontSize: RFValue(16),
+    ...globalStyles.textBold,
+    marginRight: wp('3%'), // Space between icon and text in RTL
+  },
+});
   useFocusEffect(
     useCallback(() => {
       loadData();
@@ -1044,31 +1140,23 @@ export default function HomeScreen() {
     <View style={responsiveStyles.container}>
       <StatusBar style="light" />
       <LinearGradient
-        colors={[Colors.primaryDark, Colors.primary]}
-        start={{x: 0, y: 0}}
-        end={{x: 1, y: 1}}
-        style={responsiveStyles.header}
-      >
-        <View style={responsiveStyles.headerContent}>
-          <Text style={responsiveStyles.dateText}>
-            {currentDate.toLocaleDateString('ar-EG', {
-              weekday: 'long',
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric'
-            })}
-          </Text>
-          <Text style={responsiveStyles.timeText}>
-            {currentDate.toLocaleTimeString('ar-EG', {
-              hour: '2-digit',
-              minute: '2-digit'
-            })}
-          </Text>
-        </View>
-      </LinearGradient>
+  colors={[Colors.primaryDark, Colors.primary]}
+  start={{x: 0, y: 0}}
+  end={{x: 1, y: 1}}
+  style={responsiveStyles.header}
+>
+  <View style={responsiveStyles.headerContent}>
+    <Text style={responsiveStyles.dateText}>
+      {formatArabicDate(currentDate).dateString}
+    </Text>
+    <Text style={responsiveStyles.timeText}>
+      {formatArabicDate(currentDate).timeString}
+    </Text>
+  </View>
+</LinearGradient>
       <ScrollView
         style={responsiveStyles.content}
-        contentContainerStyle={{ paddingBottom: hp('18%') }}
+        contentContainerStyle={{ paddingBottom: hp('25%') }}
         showsVerticalScrollIndicator={false}
       >
         {medicines.length === 0 ? (
@@ -1242,117 +1330,123 @@ export default function HomeScreen() {
         </LinearGradient>
       </TouchableOpacity>
 
+      
       <Modal
-        visible={isModalVisible}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={closeModal}
-      >
-        <View style={responsiveStyles.modalContainer}>
-          <View style={responsiveStyles.modalContent}>
-            <View style={responsiveStyles.modalHeader}>
-              <Text style={responsiveStyles.modalTitle}>
-                {editingMedicine ? 'تعديل الدواء' : 'إضافة دواء جديد'}
-              </Text>
-              <TouchableOpacity onPress={closeModal}>
-                <Ionicons name="close" size={wp('6%')} color={Colors.white} />
-              </TouchableOpacity>
-            </View>
+  visible={isModalVisible}
+  animationType="slide" // "slide" works perfectly with justifyContent: 'flex-end'
+  transparent={true}
+  onRequestClose={closeModal}
+>
+  <View style={creativeStyles.modalContainer}>
+    <View style={creativeStyles.modalContent}>
+      
+      <View style={creativeStyles.modalHeader}>
+        <Text style={creativeStyles.modalTitle}>
+          {editingMedicine ? 'تعديل الدواء' : 'إضافة دواء جديد'}
+        </Text>
+        <TouchableOpacity onPress={closeModal} style={creativeStyles.closeButton}>
+          <Ionicons name="close" size={wp('5%')} color={Colors.textPrimary} />
+        </TouchableOpacity>
+      </View>
 
-            <ScrollView style={responsiveStyles.modalBody}>
-              <Text style={responsiveStyles.label}>اسم الدواء</Text>
-              <TextInput
-                style={responsiveStyles.input}
-                value={medicineName}
-                onChangeText={setMedicineName}
-                placeholder="أدخل اسم الدواء"
-                maxLength={50}
-              />
-
-              <Text style={responsiveStyles.label}>صورة الدواء</Text>
-              <TouchableOpacity style={responsiveStyles.photoButton} onPress={pickImage}>
-                <Ionicons name="camera" size={wp('5%')} color={Colors.primary} />
-                <Text style={responsiveStyles.photoButtonText}>
-                  {medicinePhoto ? 'تغيير الصورة' : 'إضافة صورة'}
-                </Text>
-              </TouchableOpacity>
-
-              {medicinePhoto && (
-                <View style={responsiveStyles.imagePreviewContainer}>
-                  <Image
-                    source={{ uri: medicinePhoto }}
-                    style={responsiveStyles.imagePreview}
-                    resizeMode="cover"
-                  />
-                  <TouchableOpacity
-                    style={responsiveStyles.removeImageButton}
-                    onPress={() => setMedicinePhoto(null)}
-                  >
-                    <Ionicons name="close-circle" size={wp('5.5%')} color={Colors.primary} />
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              <Text style={responsiveStyles.label}>الكمية المتبقية</Text>
-              <TextInput
-                style={responsiveStyles.input}
-                value={quantity}
-                onChangeText={setQuantity}
-                placeholder="مثال: 2"
-                keyboardType="numeric"
-              />
-
-              <Text style={responsiveStyles.label}>الأوقات المحددة</Text>
-              <View style={responsiveStyles.exactTimesContainer}>
-                {exactTimes.map((time, index) => (
-                  <View key={index} style={responsiveStyles.exactTimeChip}>
-                    <Text style={responsiveStyles.exactTimeText}>{time}</Text>
-                    <TouchableOpacity
-                      style={responsiveStyles.removeTimeButton}
-                      onPress={() => removeExactTime(index)}
-                    >
-                      <Ionicons name="close" size={wp('4%')} color={Colors.primary} />
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              </View>
-
-              <TouchableOpacity style={responsiveStyles.addTimeButton} onPress={showTimePickerModal}>
-                <Ionicons name="add-circle-outline" size={wp('5%')} color={Colors.primary} />
-                <Text style={responsiveStyles.addTimeButtonText}>إضافة وقت</Text>
-              </TouchableOpacity>
-
-              {showTimePicker && (
-                <DateTimePicker
-                  value={pickerTime}
-                  mode="time"
-                  is24Hour={true}
-                  display="default"
-                  onChange={onTimeChange}
-                  textColor={Colors.primary}
-                />
-              )}
-
-              <TouchableOpacity
-                style={responsiveStyles.saveButton}
-                onPress={handleSaveMedicine}
-              >
-                <LinearGradient
-                  colors={[Colors.primaryLight, Colors.primary]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={responsiveStyles.saveButtonGradient}
-                >
-                  <Ionicons name="save-outline" size={wp('5%')} color={Colors.white} />
-                  <Text style={responsiveStyles.saveButtonText}>
-                    {editingMedicine ? 'تحديث الدواء' : 'حفظ الدواء'}
-                  </Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </ScrollView>
+      <ScrollView showsVerticalScrollIndicator={false}>
+        {/* Card 1: Medicine Name */}
+        <View style={creativeStyles.inputCard}>
+          <Text style={creativeStyles.label}>اسم الدواء</Text>
+          <View style={creativeStyles.inputWrapper}>
+            <TextInput
+              style={creativeStyles.input}
+              value={medicineName}
+              onChangeText={setMedicineName}
+              placeholder="مثال: بانادول"
+              maxLength={50}
+            />
+            <Ionicons name="medkit-outline" size={wp('5%')} color={Colors.primary} style={creativeStyles.inputIcon}/>
           </View>
         </View>
-      </Modal>
+
+        {/* Card 2: Quantity */}
+        <View style={creativeStyles.inputCard}>
+          <Text style={creativeStyles.label}>الكمية  (حبة)</Text>
+          <View style={creativeStyles.inputWrapper}>
+            <TextInput
+              style={creativeStyles.input}
+              value={quantity}
+              onChangeText={setQuantity}
+              placeholder="مثال: 30"
+              keyboardType="numeric"
+            />
+            <Ionicons name="albums-outline" size={wp('5%')} color={Colors.primary} style={creativeStyles.inputIcon} />
+          </View>
+        </View>
+
+        {/* Card 3: Photo Upload */}
+        <View style={creativeStyles.inputCard}>
+            <Text style={creativeStyles.label}>صورة الدواء (اختياري)</Text>
+            <TouchableOpacity style={creativeStyles.photoUploadContainer} onPress={pickImage}>
+                {medicinePhoto ? (
+                    <>
+                        <Image source={{ uri: medicinePhoto }} style={creativeStyles.imagePreview} resizeMode="cover" />
+                        <TouchableOpacity style={creativeStyles.removeImageButton} onPress={() => setMedicinePhoto(null)}>
+                            <Ionicons name="trash-outline" size={wp('5%')} color={Colors.primary} />
+                        </TouchableOpacity>
+                    </>
+                ) : (
+                    <>
+                        <Ionicons name="camera-outline" size={wp('10%')} color={Colors.primary} />
+                        <Text style={creativeStyles.photoUploadText}>إضافة صورة</Text>
+                    </>
+                )}
+            </TouchableOpacity>
+        </View>
+
+        {/* Card 4: Timing */}
+        <View style={creativeStyles.inputCard}>
+            <View style={{flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center'}}>
+                <Text style={creativeStyles.label}>أوقات الجرعات</Text>
+                <TouchableOpacity onPress={showTimePickerModal}>
+                    <Ionicons name="add-circle" size={wp('8%')} color={Colors.primary} />
+                </TouchableOpacity>
+            </View>
+            <View style={creativeStyles.exactTimesContainer}>
+              {exactTimes.map((time, index) => (
+                <View key={index} style={creativeStyles.exactTimeChip}>
+                  <Text style={creativeStyles.exactTimeText}>{time}</Text>
+                  <TouchableOpacity onPress={() => removeExactTime(index)}>
+                    <Ionicons name="close-circle-outline" size={wp('5%')} color={Colors.primary} />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+        </View>
+
+        {showTimePicker && (
+          <DateTimePicker
+            value={pickerTime}
+            mode="time"
+            is24Hour={true}
+            display="default"
+            onChange={onTimeChange}
+          />
+        )}
+
+        <TouchableOpacity style={creativeStyles.saveButton} onPress={handleSaveMedicine}>
+          <LinearGradient
+            colors={[Colors.primaryLight, Colors.primary]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={creativeStyles.saveButtonGradient}
+          >
+            <Ionicons name="save-outline" size={wp('6%')} color={Colors.white} />
+            <Text style={creativeStyles.saveButtonText}>
+              {editingMedicine ? 'تحديث البيانات' : 'حفظ الدواء'}
+            </Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      </ScrollView>
+    </View>
+  </View>
+</Modal>
     </View>
   );
 }

@@ -1,48 +1,39 @@
 {
   "expo": {
-    "name": "jouraa--ff",
-    "slug": "jouraa--ff",
+    "name": "Jura’a",
+    "slug": "juraa",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "jouraaff",
+    "icon": "./assets/images/logo.png",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
-    "ios": {
-      "supportsTablet": true
+    "splash": {
+      "backgroundColor": "#f1f5f9"
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/images/logo.png",
+        "backgroundColor": "#f1f5f9"
       },
-      "edgeToEdgeEnabled": true,
       "package": "com.younes2003.jouraa"
     },
-    "web": {
-      "bundler": "metro",
-      "output": "static",
-      "favicon": "./assets/images/favicon.png"
+    "ios": {
+      "bundleIdentifier": "com.younes2003.jouraa",
+      "supportsTablet": true,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "plugins": [
-      "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "backgroundColor": "#f1f5f9"
         }
       ]
     ],
-    "experiments": {
-      "typedRoutes": true
-    },
     "extra": {
-      "router": {},
       "eas": {
-        "projectId": "8c1c5cae-6ec3-44ea-964b-9a554464c630"
+        "projectId": "9951f927-2bd6-4a68-ba6f-41f15e9636b5"
       }
     }
   }
