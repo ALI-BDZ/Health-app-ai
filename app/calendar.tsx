@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Dimensions, Animated, Modal } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import React, { useEffect, useState } from 'react';
+import { Animated, Dimensions, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Colors } from '../constants/Colors';
 import { useDailyLog } from '../services/DailyLogContext';
 import { DatabaseService, Medicine } from '../services/databaseService';
-import { Colors } from '../constants/Colors';
 import { globalStyles } from '../services/globalstyle';
 
 const { width } = Dimensions.get('window');
@@ -54,21 +54,40 @@ export default function CalendarScreen() {
     }).start();
   }, [dailyLogs]);
 
-  // Build a list of all (date, med, time, status)
+  // Build a list of all (date, med, time, status) - FIXED to avoid duplicates
   const entries: { date: string; medName: string; time: string; status: boolean }[] = [];
   Object.entries(dailyLogs).forEach(([date, log]) => {
     medicines.forEach(med => {
-      const medLog = log.taken[String(med.id)] || log.taken[med.id as keyof typeof log.taken];
-      med.exactTimes.forEach(time => {
-        const formattedTime = padTime(time);
-        const taken = medLog?.takenTimes?.[formattedTime] === true;
-        entries.push({ date, medName: med.name, time: formattedTime, status: taken });
-      });
+      // Try to get the medicine log, prioritizing string version first
+      const medLog = log.taken[String(med.id)] || log.taken[med.id];
+      
+      if (medLog) {
+        med.exactTimes.forEach(time => {
+          const formattedTime = padTime(time);
+          const taken = medLog.takenTimes?.[formattedTime] === true;
+          entries.push({ date, medName: med.name, time: formattedTime, status: taken });
+        });
+      } else {
+        // If no log exists, create entries with false status
+        med.exactTimes.forEach(time => {
+          const formattedTime = padTime(time);
+          entries.push({ date, medName: med.name, time: formattedTime, status: false });
+        });
+      }
     });
   });
 
+  // Remove duplicates based on unique combination of date, medName, and time
+  const uniqueEntries = entries.filter((entry, index, self) => 
+    index === self.findIndex(e => 
+      e.date === entry.date && 
+      e.medName === entry.medName && 
+      e.time === entry.time
+    )
+  );
+
   // Filtrer les entrées par jour, mois, année
-  const filteredEntries = entries.filter(entry => {
+  const filteredEntries = uniqueEntries.filter(entry => {
     const date = new Date(entry.date);
     const dayOfWeek = date.getDay();
     const month = date.getMonth();
@@ -167,8 +186,8 @@ export default function CalendarScreen() {
   };
 
   const getStatusStats = () => {
-    const total = entries.length;
-    const taken = entries.filter(e => e.status).length;
+    const total = uniqueEntries.length;
+    const taken = uniqueEntries.filter(e => e.status).length;
     const missed = total - taken;
     const percentage = total > 0 ? Math.round((taken / total) * 100) : 0;
     
@@ -364,7 +383,7 @@ export default function CalendarScreen() {
                   styles.filterButtonText,
                   selectedFilter === 'all' && styles.filterButtonTextActive
                 ]}>
-                  Tout ({entries.length})
+                  Tout ({uniqueEntries.length})
                 </Text>
               </TouchableOpacity>
               
@@ -506,7 +525,7 @@ export default function CalendarScreen() {
                 {/* Lignes du tableau */}
                 {sortedEntries.map((item, idx) => (
                   <TouchableOpacity
-                    key={idx}
+                    key={`${item.date}-${item.medName}-${item.time}`}
                     style={[
                       styles.tableRow,
                       idx % 2 === 0 ? styles.tableRowEven : styles.tableRowOdd
@@ -809,6 +828,7 @@ const styles = StyleSheet.create({
   selectorScroll: {
     flexGrow: 0,
   },
+
   selectorButton: {
     flexDirection: 'row',
     alignItems: 'center',
