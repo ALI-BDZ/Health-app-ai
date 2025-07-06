@@ -1,36 +1,21 @@
 {
   "expo": {
-    "name": "Jura’a",
+    "name": "Juraa",
     "slug": "juraa",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/logo.png",
-    "userInterfaceStyle": "automatic",
-    "splash": {
-      "backgroundColor": "#f1f5f9"
-    },
+    "icon": "./assets/images/image.png",
+    "platforms": ["android", "ios"],
     "android": {
+      "package": "com.younes2003.juraa",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/logo.png",
-        "backgroundColor": "#f1f5f9"
-      },
-      "package": "com.younes2003.jouraa"
-    },
-    "ios": {
-      "bundleIdentifier": "com.younes2003.jouraa",
-      "supportsTablet": true,
-      "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "foregroundImage": "./assets/images/image.png",
+        "backgroundColor": "#ffffff"
       }
     },
-    "plugins": [
-      [
-        "expo-splash-screen",
-        {
-          "backgroundColor": "#f1f5f9"
-        }
-      ]
-    ],
+    "ios": {
+      "bundleIdentifier": "com.younes2003.juraa"
+    },
     "extra": {
       "eas": {
         "projectId": "9951f927-2bd6-4a68-ba6f-41f15e9636b5"
