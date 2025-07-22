@@ -6,6 +6,11 @@
     "orientation": "portrait",
     "icon": "./assets/images/image.png",
     "platforms": ["android", "ios"],
+    "splash": {
+      "image": "./assets/images/blank.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#f1f5f9"  
+    },
     "android": {
       "package": "com.younes2003.juraa",
       "adaptiveIcon": {

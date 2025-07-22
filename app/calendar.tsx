@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { Animated, Dimensions, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Animated, Dimensions, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../constants/Colors';
 import { useDailyLog } from '../services/DailyLogContext';
@@ -7,8 +7,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import BottomBar from './BottomBar';
 import { globalStyles } from '../services/globalstyle';
+import { LogService } from '../services/databaseService'; // Assuming LogService is in database.ts
 
-const { width } = Dimensions.get('window');
+Dimensions.get('window');
 
 const getDayName = (dateString: string) => {
   const date = new Date(dateString);
@@ -17,7 +18,8 @@ const getDayName = (dateString: string) => {
 };
 
 export default function CalendarScreen() {
-  const { dailyLogs } = useDailyLog();
+  // Assume refreshLogs is exposed from your context to reload data after deletion
+  const { dailyLogs, refreshDailyLogs } = useDailyLog();
   const [sortBy, setSortBy] = useState<'date' | 'medicine' | 'time' | 'status'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'taken' | 'missed'>('all');
@@ -25,9 +27,17 @@ export default function CalendarScreen() {
   const [selectedDay, setSelectedDay] = useState<string>('all');
   const [selectedMonth, setSelectedMonth] = useState<number | 'all'>('all');
   const [selectedYear, setSelectedYear] = useState<number | 'all'>('all');
+
+  // Modal visibility states
   const [showDayModal, setShowDayModal] = useState(false);
-  const [showMonthModal, setShowMonthModal] = useState(false);
-  const [showYearModal, setShowYearModal] = useState(false);
+  const [, setShowMonthModal] = useState(false);
+  const [, setShowYearModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+
+  // State for delete modal
+  const [deleteMonth, setDeleteMonth] = useState<number>(new Date().getMonth());
+  const [deleteYear, setDeleteYear] = useState<number>(new Date().getFullYear());
+
 
   const daysOfWeek = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
   const months = [
@@ -70,7 +80,7 @@ export default function CalendarScreen() {
       if (selectedFilter === 'missed') return !entry.status;
       return true;
     });
-  }, [uniqueEntries, selectedDay, selectedMonth, selectedYear, selectedFilter]);
+  }, [uniqueEntries, selectedDay, daysOfWeek, selectedMonth, selectedYear, selectedFilter]);
 
   const sortedEntries = useMemo(() => {
     return [...filteredEntries].sort((a, b) => {
@@ -91,7 +101,7 @@ export default function CalendarScreen() {
       duration: 800,
       useNativeDriver: true,
     }).start();
-  }, []);
+  }, [animatedValue]);
 
   const handleSort = (column: 'date' | 'medicine' | 'time' | 'status') => {
     if (sortBy === column) {
@@ -110,6 +120,39 @@ export default function CalendarScreen() {
     });
     return Array.from(years).sort((a, b) => b - a);
   };
+  
+  const handleDeleteByMonth = async () => {
+    const monthName = months[deleteMonth];
+    Alert.alert(
+      `حذف سجلات ${monthName} ${deleteYear}`,
+      'هل أنت متأكد؟ لا يمكن التراجع عن هذا الإجراء.',
+      [
+        { text: 'إلغاء', style: 'cancel' },
+        {
+          text: 'حذف',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // Call the new, efficient function instead of looping
+              await LogService.deleteLogsForMonth(deleteMonth, deleteYear);
+
+              // Refresh the UI by fetching the updated logs
+              if (refreshDailyLogs) {
+                refreshDailyLogs();
+              }
+
+              setShowDeleteModal(false);
+              Alert.alert('نجاح', `تم حذف جميع سجلات شهر ${monthName} ${deleteYear}.`);
+            } catch (error) {
+              console.error("Failed to delete logs for month:", error);
+              Alert.alert('خطأ', 'فشل حذف السجلات. يرجى المحاولة مرة أخرى.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
 
   const getSortIcon = (column: 'date' | 'medicine' | 'time' | 'status') => {
     if (sortBy !== column) return 'swap-vertical-outline';
@@ -161,10 +204,9 @@ export default function CalendarScreen() {
             <Text style={styles.topBarTitle}>تتبع مسار أخذ الأدوية</Text>
           </View>
         </LinearGradient>
-        <ScrollView style={styles.container} showsVerticalScrollIndicator={true}>
+        <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 80 }} showsVerticalScrollIndicator={true}>
           <Animated.View style={[styles.headerContainer, { opacity: animatedValue, transform: [{ translateY: animatedValue.interpolate({ inputRange: [0, 1], outputRange: [-50, 0] }) }] }]}>
             <View style={styles.headerContent}>
-
               <View style={styles.statsContainer}>
                 <View style={styles.statCard}>
                   <Text style={[globalStyles.text, styles.statNumber]}>{stats.percentage}%</Text>
@@ -188,25 +230,24 @@ export default function CalendarScreen() {
                 <Text style={[globalStyles.text, styles.selectorButtonText, selectedDay !== 'all' && styles.selectorButtonTextActive]}>
                   {selectedDay === 'all' ? 'اليوم' : selectedDay}
                 </Text>
-                <Ionicons name="chevron-down" size={14} color={selectedDay !== 'all' ? Colors.white : Colors.primary} />
               </TouchableOpacity>
               <TouchableOpacity style={[styles.selectorButton, selectedMonth !== 'all' && styles.selectorButtonActive]} onPress={() => setShowMonthModal(true)}>
                 <Ionicons name="calendar-outline" size={16} color={selectedMonth !== 'all' ? Colors.white : Colors.primary} />
                 <Text style={[globalStyles.text, styles.selectorButtonText, selectedMonth !== 'all' && styles.selectorButtonTextActive]}>
                   {selectedMonth === 'all' ? 'الشهر' : months[selectedMonth]}
                 </Text>
-                <Ionicons name="chevron-down" size={14} color={selectedMonth !== 'all' ? Colors.white : Colors.primary} />
               </TouchableOpacity>
               <TouchableOpacity style={[styles.selectorButton, selectedYear !== 'all' && styles.selectorButtonActive]} onPress={() => setShowYearModal(true)}>
                 <Ionicons name="calendar-outline" size={16} color={selectedYear !== 'all' ? Colors.white : Colors.primary} />
                 <Text style={[globalStyles.text, styles.selectorButtonText, selectedYear !== 'all' && styles.selectorButtonTextActive]}>
                   {selectedYear === 'all' ? 'السنة' : selectedYear}
                 </Text>
-                <Ionicons name="chevron-down" size={14} color={selectedYear !== 'all' ? Colors.white : Colors.primary} />
               </TouchableOpacity>
               <TouchableOpacity style={styles.resetButton} onPress={resetFilters}>
-                <Ionicons name="refresh-outline" size={16} color={Colors.error} />
-                <Text style={[globalStyles.text, styles.resetButtonText]}>إعادة</Text>
+                <Ionicons name="refresh-outline" size={16} color={Colors.primary} />
+              </TouchableOpacity>
+               <TouchableOpacity style={styles.deleteButton} onPress={() => setShowDeleteModal(true)}>
+                <Ionicons name="trash-outline" size={16} color={Colors.error} />
               </TouchableOpacity>
             </ScrollView>
           </Animated.View>
@@ -220,13 +261,13 @@ export default function CalendarScreen() {
               </TouchableOpacity>
               <TouchableOpacity style={[styles.filterButton, selectedFilter === 'taken' && styles.filterButtonActive]} onPress={() => setSelectedFilter('taken')}>
                 <Ionicons name="checkmark-circle-outline" size={16} color={selectedFilter === 'taken' ? Colors.white : Colors.success} />
-                <Text style={[globalStyles.text, styles.filterButtonText, selectedFilter === 'taken' && styles.filterButtonTextActive]}>
+                <Text style={[globalStyles.text, styles.filterButtonText, selectedFilter === 'taken' && styles.filterButtonTextActive, {color: selectedFilter === 'taken' ? Colors.white : Colors.success}]}>
                   مأخوذ ({stats.taken})
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.filterButton, selectedFilter === 'missed' && styles.filterButtonActive]} onPress={() => setSelectedFilter('missed')}>
                 <Ionicons name="close-circle-outline" size={16} color={selectedFilter === 'missed' ? Colors.white : Colors.error} />
-                <Text style={[globalStyles.text, styles.filterButtonText, selectedFilter === 'missed' && styles.filterButtonTextActive]}>
+                <Text style={[globalStyles.text, styles.filterButtonText, selectedFilter === 'missed' && styles.filterButtonTextActive, {color: selectedFilter === 'missed' ? Colors.white : Colors.error}]}>
                   فائتة ({stats.missed})
                 </Text>
               </TouchableOpacity>
@@ -246,122 +287,122 @@ export default function CalendarScreen() {
             </Animated.View>
           ) : (
             <Animated.View style={[styles.tableContainer, { opacity: animatedValue, transform: [{ translateY: animatedValue.interpolate({ inputRange: [0, 1], outputRange: [100, 0] }) }] }]}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={true} style={styles.horizontalScroll}>
-                <View style={styles.table}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={true}>
+                <View>
                   <View style={styles.tableHeader}>
-                    <TouchableOpacity style={[styles.headerCell, { flex: 2 }]} onPress={() => handleSort('date')}>
+                    <TouchableOpacity style={[styles.headerCell, { width: 120 }]} onPress={() => handleSort('date')}>
                       <Text style={[globalStyles.text, styles.headerCellText]}>التاريخ</Text>
                       <Ionicons name={getSortIcon('date')} size={14} color={Colors.white} />
                     </TouchableOpacity>
-                    <TouchableOpacity style={[styles.headerCell, { flex: 2.5 }]} onPress={() => handleSort('medicine')}>
+                    <TouchableOpacity style={[styles.headerCell, { width: 150 }]} onPress={() => handleSort('medicine')}>
                       <Text style={[globalStyles.text, styles.headerCellText]}>الدواء</Text>
                       <Ionicons name={getSortIcon('medicine')} size={14} color={Colors.white} />
                     </TouchableOpacity>
-                    <TouchableOpacity style={[styles.headerCell, { flex: 1.5 }]} onPress={() => handleSort('time')}>
+                    <TouchableOpacity style={[styles.headerCell, { width: 90 }]} onPress={() => handleSort('time')}>
                       <Text style={[globalStyles.text, styles.headerCellText]}>الوقت</Text>
                       <Ionicons name={getSortIcon('time')} size={14} color={Colors.white} />
                     </TouchableOpacity>
-                    <TouchableOpacity style={[styles.headerCell, { flex: 1.5 }]} onPress={() => handleSort('status')}>
+                    <TouchableOpacity style={[styles.headerCell, { width: 100 }]} onPress={() => handleSort('status')}>
                       <Text style={[globalStyles.text, styles.headerCellText]}>الحالة</Text>
                       <Ionicons name={getSortIcon('status')} size={14} color={Colors.white} />
                     </TouchableOpacity>
                   </View>
-                  {sortedEntries.map((item, idx) => (
-                    <TouchableOpacity key={`${item.date}-${item.medName}-${item.time}`} style={[styles.tableRow, idx % 2 === 0 ? styles.tableRowEven : styles.tableRowOdd]} activeOpacity={0.7}>
-                      <View style={[styles.cell, { flex: 2 }]}>
-                        <Text style={[globalStyles.text, styles.cellText]}>{formatDate(item.date)}</Text>
-                        <Text style={[globalStyles.text, styles.dayText]}>{getDayName(item.date)}</Text>
-                      </View>
-                      <View style={[styles.cell, { flex: 2.5 }]}>
-                        <View style={styles.medicineContainer}>
-                          <View style={styles.medicineIcon}>
-                            <Ionicons name="medical-outline" size={12} color={Colors.primary} />
+                  {/* This View is crucial for the vertical scroll */}
+                  <View>
+                    {sortedEntries.map((item, idx) => (
+                      <TouchableOpacity key={`${item.date}-${item.medName}-${item.time}`} style={[styles.tableRow, idx % 2 === 0 ? styles.tableRowEven : styles.tableRowOdd]} activeOpacity={0.7}>
+                        <View style={[styles.cell, { width: 120 }]}>
+                          <Text style={[globalStyles.text, styles.cellText]}>{formatDate(item.date)}</Text>
+                          <Text style={[globalStyles.text, styles.dayText]}>{getDayName(item.date)}</Text>
+                        </View>
+                        <View style={[styles.cell, { width: 150 }]}>
+                          <View style={styles.medicineContainer}>
+                            <View style={styles.medicineIcon}>
+                              <Ionicons name="medical-outline" size={12} color={Colors.primary} />
+                            </View>
+                            <Text style={[globalStyles.text, styles.cellText]} numberOfLines={1}>
+                              {item.medName}
+                            </Text>
                           </View>
-                          <Text style={[globalStyles.text, styles.cellText]} numberOfLines={1}>
-                            {item.medName}
-                          </Text>
                         </View>
-                      </View>
-                      <View style={[styles.cell, { flex: 1.5 }]}>
-                        <View style={styles.timeContainer}>
-                          <Ionicons name="time-outline" size={12} color={Colors.textSecondary} />
-                          <Text style={[globalStyles.text, styles.cellText]}>{item.time}</Text>
+                        <View style={[styles.cell, { width: 90 }]}>
+                          <View style={styles.timeContainer}>
+                            <Ionicons name="time-outline" size={12} color={Colors.textSecondary} />
+                            <Text style={[globalStyles.text, styles.cellText]}>{item.time}</Text>
+                          </View>
                         </View>
-                      </View>
-                      <View style={[styles.cell, { flex: 1.5 }]}>
-                        <View style={[styles.statusContainer, item.status ? styles.statusTaken : styles.statusMissed]}>
-                          <Ionicons name={item.status ? 'checkmark-circle' : 'close-circle'} size={16} color={item.status ? Colors.success : Colors.error} />
-                          <Text style={[globalStyles.text, styles.statusText, { color: item.status ? Colors.success : Colors.error }]}>
-                            {item.status ? 'مأخوذ' : 'مفوّت'}
-                          </Text>
+                        <View style={[styles.cell, { width: 100 }]}>
+                          <View style={[styles.statusContainer, item.status ? styles.statusTaken : styles.statusMissed]}>
+                            <Ionicons name={item.status ? 'checkmark-circle' : 'close-circle'} size={16} color={item.status ? Colors.success : Colors.error} />
+                            <Text style={[globalStyles.text, styles.statusText, { color: item.status ? Colors.success : Colors.error }]}>
+                              {item.status ? 'مأخوذ' : 'مفوّت'}
+                            </Text>
+                          </View>
                         </View>
-                      </View>
-                    </TouchableOpacity>
-                  ))}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
                 </View>
               </ScrollView>
             </Animated.View>
           )}
         </ScrollView>
+        {/* Day, Month, Year Modals (Unchanged) */}
         <Modal visible={showDayModal} transparent={true} animationType="fade" onRequestClose={() => setShowDayModal(false)}>
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={[globalStyles.title, styles.modalTitle]}>اختر يومًا</Text>
-              <ScrollView style={styles.modalScroll}>
-                <TouchableOpacity style={[styles.modalOption, selectedDay === 'all' && styles.modalOptionActive]} onPress={() => { setSelectedDay('all'); setShowDayModal(false); }}>
-                  <Text style={[globalStyles.text, styles.modalOptionText, selectedDay === 'all' && styles.modalOptionTextActive]}>كل الأيام</Text>
-                </TouchableOpacity>
-                {daysOfWeek.map((day, index) => (
-                  <TouchableOpacity key={index} style={[styles.modalOption, selectedDay === day && styles.modalOptionActive]} onPress={() => { setSelectedDay(day); setShowDayModal(false); }}>
-                    <Text style={[globalStyles.text, styles.modalOptionText, selectedDay === day && styles.modalOptionTextActive]}>{day}</Text>
+            <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPressOut={() => setShowDayModal(false)}>
+              <View style={styles.modalContent}>
+                <Text style={[globalStyles.title, styles.modalTitle]}>اختر يومًا</Text>
+                <ScrollView>
+                  <TouchableOpacity style={[styles.modalOption, selectedDay === 'all' && styles.modalOptionActive]} onPress={() => { setSelectedDay('all'); setShowDayModal(false); }}>
+                    <Text style={[globalStyles.text, styles.modalOptionText, selectedDay === 'all' && styles.modalOptionTextActive]}>كل الأيام</Text>
                   </TouchableOpacity>
-                ))}
-              </ScrollView>
-              <TouchableOpacity style={styles.modalCloseButton} onPress={() => setShowDayModal(false)}>
-                <Text style={[globalStyles.text, styles.modalCloseText]}>إغلاق</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+                  {daysOfWeek.map((day, index) => (
+                    <TouchableOpacity key={index} style={[styles.modalOption, selectedDay === day && styles.modalOptionActive]} onPress={() => { setSelectedDay(day); setShowDayModal(false); }}>
+                      <Text style={[globalStyles.text, styles.modalOptionText, selectedDay === day && styles.modalOptionTextActive]}>{day}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            </TouchableOpacity>
         </Modal>
-        <Modal visible={showMonthModal} transparent={true} animationType="fade" onRequestClose={() => setShowMonthModal(false)}>
-          <View style={styles.modalOverlay}>
+
+        {/* --- DELETE MODAL --- */}
+        <Modal visible={showDeleteModal} transparent={true} animationType="fade" onRequestClose={() => setShowDeleteModal(false)}>
+          <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPressOut={() => setShowDeleteModal(false)}>
             <View style={styles.modalContent}>
-              <Text style={[globalStyles.title, styles.modalTitle]}>اختر شهرًا</Text>
-              <ScrollView style={styles.modalScroll}>
-                <TouchableOpacity style={[styles.modalOption, selectedMonth === 'all' && styles.modalOptionActive]} onPress={() => { setSelectedMonth('all'); setShowMonthModal(false); }}>
-                  <Text style={[globalStyles.text, styles.modalOptionText, selectedMonth === 'all' && styles.modalOptionTextActive]}>كل الشهور</Text>
+                <Text style={[globalStyles.title, styles.modalTitle]}>حذف السجلات الشهرية</Text>
+                <Text style={styles.modalSubtitle}>اختر الشهر والسنة لحذف سجلاتهما</Text>
+                
+                {/* Month Selector */}
+                <View style={styles.deleteSelector}>
+                    <Text style={styles.deleteLabel}>الشهر:</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                        {months.map((month, index) => (
+                            <TouchableOpacity key={index} style={[styles.deleteChip, deleteMonth === index && styles.deleteChipActive]} onPress={() => setDeleteMonth(index)}>
+                                <Text style={[styles.deleteChipText, deleteMonth === index && styles.deleteChipTextActive]}>{month}</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </ScrollView>
+                </View>
+
+                {/* Year Selector */}
+                <View style={styles.deleteSelector}>
+                    <Text style={styles.deleteLabel}>السنة:</Text>
+                     <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                        {getAvailableYears().map((year) => (
+                            <TouchableOpacity key={year} style={[styles.deleteChip, deleteYear === year && styles.deleteChipActive]} onPress={() => setDeleteYear(year)}>
+                                <Text style={[styles.deleteChipText, deleteYear === year && styles.deleteChipTextActive]}>{year}</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </ScrollView>
+                </View>
+
+                <TouchableOpacity style={styles.modalDeleteButton} onPress={handleDeleteByMonth}>
+                    <Ionicons name="trash-bin-outline" size={18} color={Colors.white} />
+                    <Text style={styles.modalDeleteButtonText}>حذف سجلات {months[deleteMonth]} {deleteYear}</Text>
                 </TouchableOpacity>
-                {months.map((month, index) => (
-                  <TouchableOpacity key={index} style={[styles.modalOption, selectedMonth === index && styles.modalOptionActive]} onPress={() => { setSelectedMonth(index); setShowMonthModal(false); }}>
-                    <Text style={[globalStyles.text, styles.modalOptionText, selectedMonth === index && styles.modalOptionTextActive]}>{month}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-              <TouchableOpacity style={styles.modalCloseButton} onPress={() => setShowMonthModal(false)}>
-                <Text style={[globalStyles.text, styles.modalCloseText]}>إغلاق</Text>
-              </TouchableOpacity>
             </View>
-          </View>
-        </Modal>
-        <Modal visible={showYearModal} transparent={true} animationType="fade" onRequestClose={() => setShowYearModal(false)}>
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={[globalStyles.title, styles.modalTitle]}>اختر سنة</Text>
-              <ScrollView style={styles.modalScroll}>
-                <TouchableOpacity style={[styles.modalOption, selectedYear === 'all' && styles.modalOptionActive]} onPress={() => { setSelectedYear('all'); setShowYearModal(false); }}>
-                  <Text style={[globalStyles.text, styles.modalOptionText, selectedYear === 'all' && styles.modalOptionTextActive]}>كل السنوات</Text>
-                </TouchableOpacity>
-                {getAvailableYears().map((year) => (
-                  <TouchableOpacity key={year} style={[styles.modalOption, selectedYear === year && styles.modalOptionActive]} onPress={() => { setSelectedYear(year); setShowYearModal(false); }}>
-                    <Text style={[globalStyles.text, styles.modalOptionText, selectedYear === year && styles.modalOptionTextActive]}>{year}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-              <TouchableOpacity style={styles.modalCloseButton} onPress={() => setShowYearModal(false)}>
-                <Text style={[globalStyles.text, styles.modalCloseText]}>إغلاق</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+          </TouchableOpacity>
         </Modal>
       </View>
       <BottomBar currentRoute="calendar" />
@@ -381,26 +422,21 @@ const styles = StyleSheet.create({
   topBar: {
     height: 60,
     justifyContent: 'center',
-    alignItems: 'center', // Added to center content vertically
+    alignItems: 'center',
     paddingHorizontal: 16,
     elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
   },
   topBarContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center', // Added to center content horizontally
-    width: '100%', // Ensure full width
+    justifyContent: 'center',
+    width: '100%',
   },
   topBarTitle: {
     fontSize: 24,
     color: Colors.white,
     marginLeft: 12,
-    textAlign: 'center', // Center text
-    ...globalStyles.text, // Applied global font style
+    ...globalStyles.text,
   },
   container: {
     flex: 1,
@@ -413,32 +449,11 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     borderRadius: 16,
     padding: 20,
+    elevation: 5,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 12,
-    elevation: 5,
-  },
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  iconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.primaryLight + '20',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: Colors.primary,
-    flex: 1,
-    textAlign: 'right',
   },
   statsContainer: {
     flexDirection: 'row',
@@ -470,6 +485,8 @@ const styles = StyleSheet.create({
   },
   selectorContent: {
     paddingVertical: 4,
+    flexDirection: 'row',
+    alignItems: 'center'
   },
   selectorButton: {
     flexDirection: 'row',
@@ -479,10 +496,6 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 20,
     marginRight: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
     elevation: 2,
   },
   selectorButtonActive: {
@@ -490,7 +503,6 @@ const styles = StyleSheet.create({
   },
   selectorButtonText: {
     marginLeft: 4,
-    marginRight: 4,
     fontSize: 13,
     fontWeight: '600',
     color: Colors.primary,
@@ -499,21 +511,23 @@ const styles = StyleSheet.create({
     color: Colors.white,
   },
   resetButton: {
-    flexDirection: 'row',
+    justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: Colors.white,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: Colors.error + '30',
-    marginLeft: 4,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    elevation: 2,
+    marginHorizontal: 4,
   },
-  resetButtonText: {
-    marginLeft: 4,
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.error,
+  deleteButton: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.error + '20',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    elevation: 2,
   },
   filterContainer: {
     marginBottom: 20,
@@ -532,14 +546,13 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 25,
     marginRight: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
     elevation: 2,
+    borderWidth: 1,
+    borderColor: Colors.border + '30',
   },
   filterButtonActive: {
     backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
   },
   filterButtonText: {
     marginLeft: 6,
@@ -583,31 +596,26 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   tableContainer: {
-    marginBottom: 20,
-  },
-  horizontalScroll: {
-    flex: 1,
-  },
-  table: {
     backgroundColor: Colors.white,
     borderRadius: 16,
     overflow: 'hidden',
+    elevation: 5,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 12,
-    elevation: 5,
-    minWidth: width - 32,
   },
   tableHeader: {
     flexDirection: 'row',
     backgroundColor: Colors.primary,
-    paddingVertical: 16,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
   },
   headerCell: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 16,
     paddingHorizontal: 8,
   },
   headerCellText: {
@@ -619,10 +627,8 @@ const styles = StyleSheet.create({
   tableRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border + '30',
-    minWidth: width - 32,
   },
   tableRowEven: {
     backgroundColor: Colors.white,
@@ -631,11 +637,13 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   cell: {
-    paddingHorizontal: 8,
+    paddingHorizontal: 19,
+    paddingVertical: 16,
     justifyContent: 'center',
+    alignItems: 'center'
   },
   cellText: {
-    fontSize: 13,
+    fontSize: 12,
     color: Colors.text,
     fontWeight: '500',
     textAlign: 'center',
@@ -650,7 +658,8 @@ const styles = StyleSheet.create({
   medicineContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
+    width: '100%',
   },
   medicineIcon: {
     width: 20,
@@ -690,23 +699,27 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 20,
   },
   modalContent: {
     backgroundColor: Colors.white,
     borderRadius: 16,
     padding: 20,
-    width: width * 0.8,
-    maxHeight: '70%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
+    width: '100%',
+    maxHeight: '80%',
     elevation: 10,
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: '700',
     color: Colors.primary,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  modalSubtitle: {
+    ...globalStyles.text,
+    fontSize: 14,
+    color: Colors.textSecondary,
     textAlign: 'center',
     marginBottom: 20,
   },
@@ -726,22 +739,57 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
     color: Colors.text,
-    textAlign: 'right',
+    textAlign: 'center',
   },
   modalOptionTextActive: {
     color: Colors.white,
   },
-  modalCloseButton: {
-    backgroundColor: Colors.background,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    marginTop: 16,
-    alignItems: 'center',
+  deleteSelector: {
+    marginBottom: 16,
   },
-  modalCloseText: {
-    fontSize: 16,
+  deleteLabel: {
+    ...globalStyles.text,
+    fontSize: 14,
     fontWeight: '600',
     color: Colors.primary,
+    marginBottom: 8,
+    textAlign: 'right',
+  },
+  deleteChip: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: Colors.background,
+    borderRadius: 20,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: Colors.border
+  },
+  deleteChipActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  deleteChipText: {
+    ...globalStyles.text,
+    color: Colors.primary,
+    fontWeight: '500'
+  },
+  deleteChipTextActive: {
+    color: Colors.white,
+  },
+  modalDeleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.error,
+    paddingVertical: 14,
+    borderRadius: 8,
+    marginTop: 16,
+  },
+  modalDeleteButtonText: {
+    ...globalStyles.text,
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.white,
+    marginLeft: 8,
   },
 });

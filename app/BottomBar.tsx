@@ -18,13 +18,13 @@ interface BottomBarProps {
 
 export default function BottomBar({ currentRoute }: BottomBarProps) {
   const router = useRouter();
-  // 🚦 Ref to block rapid navigation
   const isNavigatingRef = useRef(false);
 
   const tabs: Tab[] = [
     { name: 'home',     label: 'الرئيسية',    icon: 'home'     },
     { name: 'calendar', label: 'متابعة',      icon: 'calendar' },
-    { name: 'profile',  label: 'الملف الشخصي', icon: 'person'   },
+    { name: 'ai',       label: ' المدرب الذكي',     icon: 'bulb'     },  // 
+    { name: 'profile',  label: ' معلوماتي', icon: 'person'   },
   ];
 
   const handlePress = (tabName: string, isActive: boolean) => {
@@ -33,7 +33,6 @@ export default function BottomBar({ currentRoute }: BottomBarProps) {
     }
     isNavigatingRef.current = true;
     router.push(`/${tabName}` as any);
-    // Give the router a chance—reset after a short delay
     setTimeout(() => {
       isNavigatingRef.current = false;
     }, 500);
@@ -61,10 +60,14 @@ export default function BottomBar({ currentRoute }: BottomBarProps) {
                   color={isActive ? Colors.white : Colors.iconInactive}
                 />
               </View>
-              <Text style={[
-                styles.labelText,
-                isActive ? styles.activeLabelText : styles.inactiveLabelText
-              ]}>
+              <Text
+                style={[
+                  styles.labelText,
+                  isActive ? styles.activeLabelText : styles.inactiveLabelText
+                ]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
                 {tab.label}
               </Text>
             </Pressable>
@@ -128,8 +131,9 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   labelText: {
-    fontSize: 12,
+    fontSize: 11,
     marginTop: 2,
+    textAlign: 'center',
   },
   inactiveLabelText: {
     ...globalStyles.textDefault,

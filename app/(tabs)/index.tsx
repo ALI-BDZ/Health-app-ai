@@ -1,73 +1,91 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { HelloWave } from '@/components/HelloWave';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
+import React from 'react';
+import { Image, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+
 export default function HomeScreen() {
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
+    <ScrollView style={styles.container}>
+      <View style={styles.header}>
         <Image
           source={require('@/assets/images/logo.png')}
           style={styles.reactLogo}
         />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
+      </View>
+
+      <View style={styles.titleContainer}>
+        <Text style={styles.title}>Welcome!</Text>
+        <Text style={styles.wave}>👋</Text>
+      </View>
+
+      <View style={styles.stepContainer}>
+        <Text style={styles.subtitle}>Step 1: Try it</Text>
+        <Text>
+          Edit <Text style={styles.bold}>app/(tabs)/index.tsx</Text> to see changes. Press{' '}
+          <Text style={styles.bold}>
             {Platform.select({
               ios: 'cmd + d',
               android: 'cmd + m',
               web: 'F12',
             })}
-          </ThemedText>{' '}
+          </Text>{' '}
           to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+        </Text>
+      </View>
+
+      <View style={styles.stepContainer}>
+        <Text style={styles.subtitle}>Step 2: Explore</Text>
+        <Text>Tap the Explore tab to learn more about what's included in this starter app.</Text>
+      </View>
+
+      <View style={styles.stepContainer}>
+        <Text style={styles.subtitle}>Step 3: Get a fresh start</Text>
+        <Text>
+          When you're ready, run <Text style={styles.bold}>npm run reset-project</Text> to get a fresh{' '}
+          <Text style={styles.bold}>app</Text> directory. This will move the current{' '}
+          <Text style={styles.bold}>app</Text> to <Text style={styles.bold}>app-example</Text>.
+        </Text>
+      </View>
+    </ScrollView>
   );
 }
+
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  container: {
+    flex: 1,
+    backgroundColor: '#fff', // light theme
+    padding: 16,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  header: {
+    height: 200,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   reactLogo: {
     height: 178,
     width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+    resizeMode: 'contain',
+  },
+  titleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+  },
+  wave: {
+    fontSize: 24,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+  },
+  stepContainer: {
+    marginBottom: 16,
+  },
+  subtitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  bold: {
+    fontWeight: 'bold',
   },
 });

@@ -1,35 +1,35 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  Modal,
-  TextInput,
-  Image,
-  Alert,
-  Platform,
-  Dimensions
-} from 'react-native';
-import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
-import { DatabaseService, Medicine, LogService } from '../services/databaseService';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Colors } from '../constants/Colors';
-import BottomBar from './BottomBar';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Notifications from 'expo-notifications';
-import { useFocusEffect } from '@react-navigation/native';
+import { StatusBar } from 'expo-status-bar';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  Alert,
+  Dimensions,
+  Image,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
+import { Colors } from '../constants/Colors';
 import { useDailyLog } from '../services/DailyLogContext';
+import { DatabaseService, LogService, Medicine } from '../services/databaseService';
+import BottomBar from './BottomBar';
 
 const RFValue = (size: number) => {
   const scale = Dimensions.get('window').width / 375;
   return Math.round(size * scale);
 };
 
-import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-native-responsive-screen';
+import { heightPercentageToDP as hp, widthPercentageToDP as wp } from 'react-native-responsive-screen';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -60,6 +60,7 @@ export default function HomeScreen() {
   const [dimensions, setDimensions] = useState(getResponsiveDimensions());
   const [currentDate, setCurrentDate] = useState(new Date());
   const [medicines, setMedicines] = useState<Medicine[]>([]);
+  const [recentlyTaken, setRecentlyTaken] = useState<{ [key: string]: boolean }>({});
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingMedicine, setEditingMedicine] = useState<Medicine | null>(null);
   const [medicineName, setMedicineName] = useState('');
@@ -234,14 +235,66 @@ export default function HomeScreen() {
     const storedMedicines = await DatabaseService.getMedicines();
     setMedicines(storedMedicines);
   }, []);
+///////////////////////////////////////
 
+const initializeDailyLogForToday = useCallback(async () => {
+  const today = new Date().toISOString().split('T')[0];
+  const storedMedicines = await DatabaseService.getMedicines();
+  let changed = false;
+  const updatedMedicines = storedMedicines.map(med => {
+    const updatedTakenTimes: { [key: string]: boolean } = { ...med.takenTimes };
+    med.exactTimes.forEach(time => {
+      if (updatedTakenTimes[time] !== true) {
+        updatedTakenTimes[time] = false;
+      }
+    });
+    if (JSON.stringify(updatedTakenTimes) !== JSON.stringify(med.takenTimes)) {
+      changed = true;
+      return { ...med, takenTimes: updatedTakenTimes };
+    }
+    return med;
+  });
+  if (changed) {
+    for (const med of updatedMedicines) {
+      await DatabaseService.updateMedicine(med.id, { takenTimes: med.takenTimes });
+    }
+    setMedicines(updatedMedicines);
+  }
+  // Build and save a complete daily log for today
+  const taken: Record<number, any> = {};
+  updatedMedicines.forEach(med => {
+    taken[med.id] = {
+      name: med.name,
+      takenTimes: { ...med.takenTimes }
+    };
+  });
+  const dailyLog = { date: today, taken };
+  await LogService.saveDailyLog(today, dailyLog);
+  await refreshDailyLogs();
+}, [refreshDailyLogs]);
+
+// Call this on app load
+useEffect(() => {
+  initializeDailyLogForToday();
+}, [initializeDailyLogForToday]);
+
+
+///////////////////////////////////////
   useEffect(() => {
-    const timeInterval = setInterval(() => setCurrentDate(new Date()), 60000);
-
+    let lastCheckedDay = new Date().toISOString().split('T')[0];
+    const timeInterval = setInterval(() => {
+      setCurrentDate(new Date());
+      const today = new Date().toISOString().split('T')[0];
+      if (today !== lastCheckedDay) {
+        initializeDailyLogForToday(); // Reset logs/medicines when the day changes
+        lastCheckedDay = today;
+      }
+    }, 60000);
+  
     const loadAndResetMedicines = async () => {
       let storedMedicines = await DatabaseService.getMedicines();
       const today = new Date().toISOString().split('T')[0];
-      const medicinesToUpdateInDB: Medicine[] | { takenTimes: {}; lastTakenDate: string; id: number; name: string; photo?: string | null; quantity: number; periods: string[]; exactTimes: string[]; createdAt: string; updatedAt: string; }[] = [];
+      const medicinesToUpdateInDB: Medicine[] = [];
       const updatedMedicines = storedMedicines.map(med => {
         if (!med.lastTakenDate || new Date(med.lastTakenDate).toISOString().split('T')[0] !== today) {
           const resetMed = { ...med, takenTimes: {}, lastTakenDate: today };
@@ -250,12 +303,12 @@ export default function HomeScreen() {
         }
         return { ...med, takenTimes: med.takenTimes || {} };
       });
-
-      for (const med of medicinesToUpdateInDB as Medicine[]) {
+  
+      for (const med of medicinesToUpdateInDB) {
         try {
           await DatabaseService.updateMedicine(med.id, {
             takenTimes: med.takenTimes,
-            lastTakenDate: med.lastTakenDate
+            lastTakenDate: med.lastTakenDate,
           });
         } catch (dbError) {
           console.error(`Failed to update medicine:`, dbError);
@@ -263,30 +316,29 @@ export default function HomeScreen() {
       }
       setMedicines(updatedMedicines);
     };
-
+  
     const initializeApp = async () => {
       try {
-        await loadAndResetMedicines();
-        await setupNotificationChannel();
-        await scheduleAllMedicinesNotifications();
+        await loadAndResetMedicines(); // Initial load and reset for today
+        await setupNotificationChannel(); // Set up notifications
+        await scheduleAllMedicinesNotifications(); // Schedule notifications
       } catch (error) {
         console.error('Initialization error:', error);
       }
     };
-
+  
     initializeApp();
-
+  
     const notificationResponseListener = Notifications.addNotificationResponseReceivedListener(response => {
       const { data } = response.notification.request.content;
       console.log('Notification tapped with data:', data);
     });
-
+  
     return () => {
       clearInterval(timeInterval);
       Notifications.removeNotificationSubscription(notificationResponseListener);
     };
-  }, [scheduleAllMedicinesNotifications, setupNotificationChannel]);
-
+  }, [scheduleAllMedicinesNotifications, setupNotificationChannel, initializeDailyLogForToday]);
   useEffect(() => {
     if (medicines.length > 0) {
       saveDailyLog();
@@ -461,7 +513,7 @@ export default function HomeScreen() {
     }
   };
 
-  const handleDeleteMedicine = (medicineId: number) => {
+  const handleDeleteMedicine = async (medicineId: number) => {
     Alert.alert(
       "تأكيد الحذف",
       "هل أنت متأكد أنك تريد حذف هذا الدواء؟",
@@ -472,11 +524,25 @@ export default function HomeScreen() {
           style: "destructive",
           onPress: async () => {
             try {
+              // Retrieve the medicine details before deleting it
+              const medicines = await DatabaseService.getMedicines();
+              const medicineToDelete = medicines.find(m => m.id === medicineId);
+              if (medicineToDelete) {
+                // Cancel all notifications for this medicine
+                const existingNotifications = await Notifications.getAllScheduledNotificationsAsync();
+                for (const notification of existingNotifications) {
+                  if (notification.identifier.startsWith(`medicine-${medicineId}-`)) {
+                    await Notifications.cancelScheduledNotificationAsync(notification.identifier);
+                  }
+                }
+              }
+              // Delete the medicine from the database
               await DatabaseService.deleteMedicine(medicineId);
               setMedicines(prev => prev.filter(m => m.id !== medicineId));
               Alert.alert('نجاح', 'تم حذف الدواء بنجاح.');
               await scheduleAllMedicinesNotifications();
             } catch (error) {
+              console.error('Error deleting medicine:', error);
               Alert.alert('خطأ', 'فشل في حذف الدواء.');
             }
           }
@@ -484,6 +550,7 @@ export default function HomeScreen() {
       ]
     );
   };
+  
 
   const handleTakeMedicine = async (medicineId: number, time: string) => {
     const medicine = medicines.find(m => m.id === medicineId);
@@ -498,19 +565,14 @@ export default function HomeScreen() {
         {
           text: action,
           onPress: async () => {
-            // Always build a full takenTimes for the day
-            const updatedTakenTimes: { [key: string]: boolean } = {};
+            const updatedTakenTimes: { [key: string]: boolean } = { ...medicine.takenTimes };
             medicine.exactTimes.forEach(t => {
-              // If this is the time being toggled, flip it; otherwise, keep previous or default to false
-              if (t === time) {
-                updatedTakenTimes[t] = !isTaken;
-              } else {
-                updatedTakenTimes[t] = medicine.takenTimes?.[t] === true;
-              }
+              updatedTakenTimes[t] = updatedTakenTimes[t] === true; // Preserve existing states
             });
+            updatedTakenTimes[time] = !isTaken; // Toggle the current time
             const today = new Date().toISOString().split('T')[0];
             let newQuantity = medicine.quantity;
-            
+  
             try {
               await DatabaseService.updateMedicine(medicineId, {
                 takenTimes: updatedTakenTimes,
@@ -525,17 +587,18 @@ export default function HomeScreen() {
                   quantity: newQuantity,
                 } : m
               ));
-              // Use context to update the daily log
+              if (!isTaken) {
+                // Show "Medicine Taken" for 2 seconds
+                setRecentlyTaken(prev => ({ ...prev, [medicineId + time]: true }));
+                setTimeout(() => {
+                  setRecentlyTaken(prev => ({ ...prev, [medicineId + time]: false }));
+                }, 2000);
+              }
               const todayISO = new Date().toISOString().split('T')[0];
               const currentDailyLog = dailyLogs[todayISO] || { date: todayISO, taken: {} };
-              // Build a full takenTimes for the log as well
               const medLog = currentDailyLog.taken[medicineId] || { name: medicine.name, takenTimes: {} };
               medicine.exactTimes.forEach(t => {
-                if (t === time) {
-                  medLog.takenTimes[t] = !isTaken;
-                } else {
-                  medLog.takenTimes[t] = medicine.takenTimes?.[t] === true;
-                }
+                medLog.takenTimes[t] = updatedTakenTimes[t];
               });
               currentDailyLog.taken[medicineId] = medLog;
               await updateDailyLog(todayISO, currentDailyLog);
@@ -864,14 +927,17 @@ export default function HomeScreen() {
     addButton: {
       position: 'absolute',
       bottom: hp('15%'),
-      right: hp('13.5%'),
-      alignSelf: 'center',
+      left: '50%', // Position left edge at center
+      transform: [{ translateX: -wp('20%') }], // Shift button left by half its width
       elevation: 8,
       shadowColor: Colors.primary,
       shadowOffset: { width: 0, height: hp('0.5%') },
       shadowOpacity: 0.3,
       shadowRadius: wp('1.25%'),
       borderRadius: wp('8%'),
+      width: wp('40%'), // Increased width to prevent text overlap
+      minWidth: wp('40%'), // Ensure minimum width
+      maxWidth: wp('50%'), // Maximum width to maintain layout
     },
     addButtonGradient: {
       flexDirection: 'row',
@@ -1095,47 +1161,7 @@ const creativeStyles = StyleSheet.create({
   }, [medicines]);
 
   // Initialize today's log: for each medicine, for each time, ensure takenTimes[time] is set to false if not present
-  const initializeDailyLogForToday = useCallback(async () => {
-    const today = new Date().toISOString().split('T')[0];
-    const storedMedicines = await DatabaseService.getMedicines();
-    let changed = false;
-    const updatedMedicines = storedMedicines.map(med => {
-      const updatedTakenTimes: { [key: string]: boolean } = { ...med.takenTimes };
-      med.exactTimes.forEach(time => {
-        if (updatedTakenTimes[time] !== true) {
-          updatedTakenTimes[time] = false;
-        }
-      });
-      if (JSON.stringify(updatedTakenTimes) !== JSON.stringify(med.takenTimes)) {
-        changed = true;
-        return { ...med, takenTimes: updatedTakenTimes };
-      }
-      return med;
-    });
-    if (changed) {
-      for (const med of updatedMedicines) {
-        await DatabaseService.updateMedicine(med.id, { takenTimes: med.takenTimes });
-      }
-      setMedicines(updatedMedicines);
-    }
-    // Build and save a complete daily log for today
-    const taken: Record<number, any> = {};
-    updatedMedicines.forEach(med => {
-      taken[med.id] = {
-        name: med.name,
-        takenTimes: { ...med.takenTimes }
-      };
-    });
-    const dailyLog = { date: today, taken };
-    await LogService.saveDailyLog(today, dailyLog);
-    await refreshDailyLogs();
-  }, [refreshDailyLogs]);
-
-  // Call this on app load
-  useEffect(() => {
-    initializeDailyLogForToday();
-  }, [initializeDailyLogForToday]);
-
+  
   return (
     <View style={responsiveStyles.container}>
       <StatusBar style="light" />
@@ -1249,20 +1275,30 @@ const creativeStyles = StyleSheet.create({
                             )}
                           </View>
                           <TouchableOpacity
-                            onPress={() => handleTakeMedicine(medicine.id, time)}
-                            style={[
-                              responsiveStyles.takeActionButton,
-                              {
-                                backgroundColor: isTaken
-                                  ? 'rgba(255,255,255,0.2)'
-                                  : 'rgba(0,0,0,0.1)',
-                              }
-                            ]}
-                          >
-                            <Text style={responsiveStyles.takeActionButtonText}>
-                              {isTaken ? 'تراجع' : 'تناول الدواء'}
-                            </Text>
-                          </TouchableOpacity>
+  onPress={() => handleTakeMedicine(medicine.id, time)}
+  style={[
+    responsiveStyles.takeActionButton,
+    {
+      backgroundColor: recentlyTaken[medicine.id + time]
+        ? '#4CAF50' // Green when recently taken
+        : (medicine.exactTimes.length > 0 && Object.values(medicine.takenTimes || {}).every(status => status))
+          ? '#4CAF50' // Green when all times are taken
+          : isTaken
+            ? 'rgba(255,255,255,0.2)'
+            : 'rgba(0,0,0,0.1)',
+    }
+  ]}
+>
+  <Text style={responsiveStyles.takeActionButtonText}>
+    {recentlyTaken[medicine.id + time]
+      ? 'تم أخذ الدواء'
+      : (medicine.exactTimes.length > 0 && Object.values(medicine.takenTimes || {}).every(status => status))
+        ? 'كل الأدوية تم أخذها'
+        : isTaken
+          ? 'تراجع'
+          : 'تناول الدواء'}
+  </Text>
+</TouchableOpacity>
                         </LinearGradient>
                       </View>
                     );

@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, Image, Animated, Easing } from 'react-native';
 import { useFonts } from 'expo-font';
 import { router } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
+SplashScreen.preventAutoHideAsync();
 // Keep the splash screen visible while we fetch resources
 export default function AppSplashScreen() {
   const [fadeAnim] = useState(new Animated.Value(0));
@@ -23,6 +25,7 @@ export default function AppSplashScreen() {
   });
   useEffect(() => {
     if (!fontsLoaded) {
+      SplashScreen.hideAsync();
       return;
     }
     // Hide the splash screen once fonts are loaded

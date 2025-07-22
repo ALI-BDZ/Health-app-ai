@@ -3,10 +3,10 @@
     "version": ">= 16.13.3"
   },
   "build": {
-    "preview": {
+    "production-apk": {
       "android": {
         "buildType": "apk"
       }
     }
   }
-} 
+}
